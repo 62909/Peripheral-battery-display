@@ -63,8 +63,8 @@ public interface IPeripheralSource
 }
 
 /// <summary>
-/// Marker for a later Logitech HID++, Razer, or similar reader.
-/// Register an implementation from the app; v1 ships none.
+/// Marker for a vendor protocol reader such as the 空影 TAN8 Ultra source.
+/// Register an implementation from the app.
 /// A reader must return null battery when its protocol does not provide one.
 /// </summary>
 public interface IVendorBatterySource : IPeripheralSource;
