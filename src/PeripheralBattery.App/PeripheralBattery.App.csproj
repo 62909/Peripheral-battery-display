@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <!-- Compiles on non-Windows agents. Publish with -r win-x64 to produce a Windows GUI exe. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>PeripheralBattery</RootNamespace>
+    <AssemblyName>PeripheralBattery</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Description>外设电量：任务栏和托盘里的键盘、鼠标、耳机电量。</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PeripheralBattery.Core\PeripheralBattery.Core.csproj" />
+  </ItemGroup>
+</Project>
