@@ -91,7 +91,7 @@ internal sealed class TaskbarWatcher
             ? TaskbarPlacement.VisibleThickness(edge, windowRect.Left, windowRect.Top, windowRect.Width, windowRect.Height, info.rcMonitor.Left, info.rcMonitor.Top, info.rcMonitor.Width, info.rcMonitor.Height)
             : (edge is TaskbarEdge.Top or TaskbarEdge.Bottom ? bounds.Height : bounds.Width);
         var collapsed = TaskbarPlacement.IsCollapsed(autoHide, visible);
-        snapshot = Build("primary-window", info, bounds, visible, autoHide, dpi, collapsed, isPrimary: true);
+        snapshot = Build("primary-window", info, bounds, visible, autoHide, dpi, collapsed, isPrimary: true, trayWindow);
         return true;
     }
 
@@ -109,7 +109,7 @@ internal sealed class TaskbarWatcher
         var collapsed = visible <= 6;
         if (collapsed && _lastFull.TryGetValue(info.szDevice, out var previous))
             bounds = previous;
-        snapshot = Build(info.szDevice, info, bounds, visible, collapsed, dpi, collapsed, isPrimary: false);
+        snapshot = Build(info.szDevice, info, bounds, visible, collapsed, dpi, collapsed, isPrimary: false, hwnd);
         return true;
     }
 
@@ -121,7 +121,8 @@ internal sealed class TaskbarWatcher
         bool autoHide,
         int dpi,
         bool collapsed,
-        bool isPrimary)
+        bool isPrimary,
+        IntPtr trayWindow)
     {
         if (!collapsed)
             _lastFull[key] = bounds;
@@ -140,7 +141,8 @@ internal sealed class TaskbarWatcher
             info.rcMonitor.Top,
             info.rcMonitor.Width,
             info.rcMonitor.Height,
-            collapsed);
+            collapsed,
+            trayWindow);
     }
 
     private static bool ReadAutoHide()
@@ -206,7 +208,8 @@ internal sealed record TaskbarSnapshot(
     int MonitorY,
     int MonitorWidth,
     int MonitorHeight,
-    bool Collapsed)
+    bool Collapsed,
+    IntPtr TrayWindow)
 {
     public bool Matches(string anchor)
     {

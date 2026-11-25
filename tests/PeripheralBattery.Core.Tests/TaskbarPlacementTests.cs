@@ -87,6 +87,28 @@ public class TaskbarPlacementTests
     }
 
     [Fact]
+    public void Empty_taskbar_click_keeps_an_owned_overlay()
+    {
+        Assert.True(TaskbarPlacement.ShouldShow(true, collapsed: false, fullscreenApp: false));
+        Assert.False(TaskbarPlacement.ShouldShow(true, collapsed: true, fullscreenApp: false));
+        Assert.False(TaskbarPlacement.ShouldShow(true, collapsed: false, fullscreenApp: true));
+
+        var owned = new PlacedWidget(true, 1500, 1044, 84, 32, 0x1200);
+        Assert.False(TaskbarPlacement.NeedsRaise(owned, owned, trayCoversOverlay: false));
+
+        var unowned = owned with { TrayWindow = 0 };
+        Assert.True(TaskbarPlacement.NeedsRaise(unowned, owned, trayCoversOverlay: false));
+        Assert.True(TaskbarPlacement.NeedsRaise(owned, owned, trayCoversOverlay: true));
+        Assert.True(TaskbarPlacement.NeedsRaise(owned, owned with { TrayWindow = 0x3400 }, trayCoversOverlay: false));
+        Assert.True(TaskbarPlacement.NeedsRaise(owned, owned with { X = 20 }, trayCoversOverlay: false));
+        Assert.True(TaskbarPlacement.NeedsRaise(owned with { Shown = false }, owned, trayCoversOverlay: false));
+
+        var floating = owned with { TrayWindow = 0 };
+        Assert.False(TaskbarPlacement.NeedsRaise(floating, floating, trayCoversOverlay: false));
+        Assert.True(TaskbarPlacement.NeedsRaise(floating, floating, trayCoversOverlay: true));
+    }
+
+    [Fact]
     public void Auto_hide_and_fullscreen_hide_the_widget()
     {
         Assert.True(TaskbarPlacement.IsCollapsed(autoHide: true, visibleThickness: 2));
