@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>PeripheralBattery.Core</RootNamespace>
+    <AssemblyName>PeripheralBattery.Core</AssemblyName>
+    <Description>Device identity, battery parsing, and taskbar placement for the peripheral battery tray app.</Description>
+  </PropertyGroup>
+</Project>
