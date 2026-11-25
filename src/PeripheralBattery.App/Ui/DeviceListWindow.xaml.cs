@@ -134,6 +134,17 @@ public partial class DeviceListWindow : Window
         var stack = new StackPanel();
         stack.Children.Add(name);
         stack.Children.Add(kind);
+        if (!string.IsNullOrWhiteSpace(device.Note))
+        {
+            stack.Children.Add(new TextBlock
+            {
+                Text = device.Note,
+                FontSize = 11,
+                Foreground = muted,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 2, 0, 0),
+            });
+        }
         var battery = new TextBlock
         {
             Text = UiText.BatteryLabel(device.BatteryPercent),

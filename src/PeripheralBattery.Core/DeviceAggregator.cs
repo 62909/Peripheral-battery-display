@@ -29,7 +29,8 @@ public static class DeviceAggregator
                 key,
                 DeviceIdentity.ResolveDisplayName(windowsName, vid, pid, over?.DisplayName),
                 DeviceIdentity.ResolveKind(windowsName, BestKind(group), over?.Kind),
-                PickBattery(group)));
+                PickBattery(group),
+                BestNote(group)));
         }
 
         return devices
@@ -79,6 +80,14 @@ public static class DeviceAggregator
         if (top.Count == 1)
             return top[0];
         return DeviceKind.Other;
+    }
+
+    private static string? BestNote(List<RawDeviceReading> group)
+    {
+        return group
+            .OrderByDescending(r => r.Priority)
+            .Select(r => r.Note)
+            .FirstOrDefault(note => !string.IsNullOrWhiteSpace(note));
     }
 
     private static int? PickBattery(List<RawDeviceReading> group)

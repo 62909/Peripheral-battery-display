@@ -148,6 +148,80 @@ public class AkkoTan8UltraTests
         Assert.False(AkkoTan8Ultra.TryGetPayload(payload, out _));
     }
 
+    [Fact]
+    public void Windows_identity_frame_reads_cid_from_byte_0x0a()
+    {
+        var payload = Identity(2);
+        var windows = new byte[1 + payload.Length];
+        windows[0] = AkkoTan8Ultra.ReportId;
+        payload.CopyTo(windows, 1);
+        Assert.True(AkkoTan8Ultra.TryGetPayload(windows, out var stripped));
+        Assert.True(AkkoTan8Ultra.TryReadCid(stripped, out var cid));
+        Assert.Equal(2, cid);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(5)]
+    public void Other_cids_are_not_named_and_have_no_percentage(int cid)
+    {
+        var battery = Battery(80, 1, length: 16);
+        var decision = AkkoTan8Ultra.Decide(0x38EE, 0x0024, Tan8ProbeFailure.None, Identity(cid), true, battery, true);
+        Assert.Equal(Tan8Outcome.DifferentModel, decision.Outcome);
+        Assert.Null(decision.DisplayName);
+        Assert.Null(decision.BatteryPercent);
+        Assert.Equal(AkkoTan8Ultra.NoteDifferentModel, decision.Note);
+        Assert.NotEqual(AkkoTan8Ultra.ModelName, decision.Note);
+    }
+
+    [Fact]
+    public void Confirmed_cid_keeps_the_model_name_when_battery_does_not_answer()
+    {
+        var decision = AkkoTan8Ultra.Decide(0x38EE, 0x0023, Tan8ProbeFailure.None, Identity(2), true, default, false);
+        Assert.Equal(Tan8Outcome.NoBatteryReply, decision.Outcome);
+        Assert.Equal(AkkoTan8Ultra.ModelName, decision.DisplayName);
+        Assert.Null(decision.BatteryPercent);
+        Assert.Equal(AkkoTan8Ultra.NoteNoBatteryReply, decision.Note);
+    }
+
+    [Fact]
+    public void Confirmed_cid_uses_a_valid_battery_and_drops_an_invalid_one()
+    {
+        var good = AkkoTan8Ultra.Decide(0x38EE, 0x0024, Tan8ProbeFailure.None, Identity(2), true, Battery(64, 0, length: 16), true);
+        Assert.Equal(Tan8Outcome.Identified, good.Outcome);
+        Assert.Equal(64, good.BatteryPercent);
+        Assert.Null(good.Note);
+
+        var high = AkkoTan8Ultra.Decide(0x38EE, 0x0024, Tan8ProbeFailure.None, Identity(2), true, Battery(101, 0, length: 16), true);
+        Assert.Equal(Tan8Outcome.NoBatteryReply, high.Outcome);
+        Assert.Equal(AkkoTan8Ultra.ModelName, high.DisplayName);
+        Assert.Null(high.BatteryPercent);
+    }
+
+    [Fact]
+    public void A_missing_identity_reply_is_visible_and_has_no_percentage()
+    {
+        var asleep = AkkoTan8Ultra.Decide(0x38EE, 0x0024, Tan8ProbeFailure.NoReply, default, false, Battery(90, 0), false);
+        Assert.Equal(Tan8Outcome.NoIdentityReply, asleep.Outcome);
+        Assert.Null(asleep.DisplayName);
+        Assert.Null(asleep.BatteryPercent);
+        Assert.Equal(AkkoTan8Ultra.NoteNoIdentityReply, asleep.Note);
+
+        var busy = AkkoTan8Ultra.Decide(0x38EE, 0x0023, Tan8ProbeFailure.InterfaceBusy, default, false, default, false);
+        Assert.Equal(AkkoTan8Ultra.NoteInterfaceBusy, busy.Note);
+        Assert.Null(busy.BatteryPercent);
+    }
+
+    [Fact]
+    public void A_real_reply_outranks_a_mouse_interface_that_is_not_the_vendor_collection()
+    {
+        var mouseInterface = AkkoTan8Ultra.Decide(0x38EE, 0x0024, Tan8ProbeFailure.NotVendorCollection, default, false, default, false);
+        var noReply = AkkoTan8Ultra.Decide(0x38EE, 0x0024, Tan8ProbeFailure.NoReply, default, false, default, false);
+        var chosen = AkkoTan8Ultra.Prefer(mouseInterface, noReply);
+        Assert.Equal(Tan8Outcome.NoIdentityReply, chosen.Outcome);
+        Assert.Null(chosen.BatteryPercent);
+    }
+
     private static void AssertCommand(byte[] payload, byte command, byte lengthByte)
     {
         Assert.Equal(AkkoTan8Ultra.PayloadLength, payload.Length);
