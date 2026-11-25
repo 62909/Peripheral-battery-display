@@ -35,6 +35,11 @@ internal static class NativeMethods
     public const int SwpNoActivate = 0x0010;
     public const int SwpShowWindow = 0x0040;
     public const uint GenericRead = 0x80000000;
+    public const uint GenericWrite = 0x40000000;
+    public const uint FileFlagOverlapped = 0x40000000;
+    public const uint WaitObject0 = 0;
+    public const uint WaitTimeout = 0x00000102;
+    public const int ErrorIoPending = 997;
     public const uint FileShareRead = 0x00000001;
     public const uint FileShareWrite = 0x00000002;
     public const uint FileShareDelete = 0x00000004;
@@ -156,6 +161,30 @@ internal static class NativeMethods
 
     [DllImport("hid.dll", SetLastError = true)]
     public static extern bool HidD_GetInputReport(IntPtr device, byte[] report, int length);
+
+    [DllImport("hid.dll", SetLastError = true)]
+    public static extern bool HidD_FlushQueue(IntPtr device);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr CreateEvent(IntPtr security, bool manualReset, bool initialState, string? name);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool ResetEvent(IntPtr handle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool WriteFile(IntPtr file, byte[] buffer, int count, out int written, ref System.Threading.NativeOverlapped overlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool ReadFile(IntPtr file, byte[] buffer, int count, out int read, ref System.Threading.NativeOverlapped overlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool GetOverlappedResult(IntPtr file, ref System.Threading.NativeOverlapped overlapped, out int transferred, bool wait);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CancelIoEx(IntPtr file, ref System.Threading.NativeOverlapped overlapped);
 
     [DllImport("hid.dll")]
     public static extern int HidP_GetCaps(IntPtr preparsed, ref HidCaps caps);
