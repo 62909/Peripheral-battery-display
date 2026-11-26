@@ -13,24 +13,71 @@ public enum DeviceSilhouette
 }
 
 /// <summary>
-/// What the taskbar pill shows for the current devices.
-/// Left to right the view draws <see cref="Silhouette"/>, a battery filled to
-/// <see cref="FillFraction"/>, then <see cref="PercentText"/>.
+/// One device on the taskbar pill: silhouette, the text to draw, and whether
+/// that device's own charging flag adds a bolt after the text.
 /// </summary>
-public readonly record struct PillFace(
+public readonly record struct PillSlot(
     DeviceSilhouette Silhouette,
     int? Percent,
     string PercentText,
-    double FillFraction,
-    bool Charging);
+    bool Charging,
+    BatteryTone Tone);
 
 /// <summary>
-/// Chooses the taskbar pill from the devices already on screen.
+/// Horizontal place of one slot inside the pill, in DIPs from the left edge.
+/// <see cref="BoltX"/> is null when that device has no charging bolt.
+/// </summary>
+public readonly record struct PillSlotBox(
+    double X,
+    double Width,
+    double IconX,
+    double TextX,
+    double TextWidth,
+    double? BoltX,
+    PillSlot Slot);
+
+/// <summary>
+/// The whole pill. Width grows with <see cref="Slots"/> and includes padding,
+/// the border, and a gap between devices. A single slot has no extra trailing gap.
+/// </summary>
+public sealed record PillStrip(
+    IReadOnlyList<PillSlot> Slots,
+    IReadOnlyList<PillSlotBox> Boxes,
+    double WidthDip,
+    double HeightDip,
+    double GapDip,
+    double BorderDip);
+
+/// <summary>
+/// Lays out every device already on the device list, in that order.
 /// The tray icon does not use this. It still prints only the lowest percentage.
 /// </summary>
 public static class PillComposition
 {
     public const string UnknownText = "未知";
+
+    public const double HeightDip = 32;
+    public const double PadDip = 8;
+    public const double IconDip = 16;
+    public const double IconTextGapDip = 5;
+    public const double TextBoltGapDip = 3;
+    public const double BoltWidthDip = 9;
+    public const double BoltHeightDip = 13;
+
+    /// <summary>
+    /// Space between the end of one device and the start of the next.
+    /// Wider than the gap inside a device so the groups stay separate.
+    /// </summary>
+    public const double DeviceGapDip = 16;
+
+    public const double DigitDip = 8;
+    public const double PercentMarkDip = 12;
+    public const double CjkDip = 14;
+
+    /// <summary>
+    /// Extra room so Semibold YaHei / Segoe digits are not clipped.
+    /// </summary>
+    public const double TextSlackDip = 2;
 
     public static DeviceSilhouette SilhouetteFor(DeviceKind kind) => kind switch
     {
@@ -43,49 +90,82 @@ public static class PillComposition
     public static string PercentText(int? percent) =>
         BatteryMath.NormalizePercent(percent) is int value ? $"{value}%" : UnknownText;
 
-    /// <summary>
-    /// 0 when the level is missing or outside 0–100. Never a guessed fill.
-    /// </summary>
-    public static double FillFraction(int? percent) =>
-        BatteryMath.NormalizePercent(percent) is int value ? value / 100.0 : 0;
-
     public static bool ShowCharging(bool? charging) => charging == true;
 
-    /// <summary>
-    /// The device with the lowest known percentage, first one when several tie.
-    /// If none have a known percentage, a single device still lends its type and
-    /// charging flag. Several devices with no known level use the generic mark.
-    /// </summary>
-    public static PillFace Select(IEnumerable<PeripheralDevice> devices)
+    public static double TextWidthDip(string text)
     {
-        PeripheralDevice? lowest = null;
-        PeripheralDevice? single = null;
-        var count = 0;
-        foreach (var device in devices)
+        var width = TextSlackDip;
+        foreach (var ch in text)
         {
-            count++;
-            if (count == 1)
-                single = device;
-            if (BatteryMath.NormalizePercent(device.BatteryPercent) is int value
-                && (lowest is null || value < lowest.BatteryPercent!.Value))
-                lowest = device;
+            width += ch == '%'
+                ? PercentMarkDip
+                : ch is >= '0' and <= '9'
+                    ? DigitDip
+                    : CjkDip;
         }
 
-        if (lowest is not null)
-            return Describe(lowest.Kind, lowest.BatteryPercent, lowest.Charging);
-        if (count == 1 && single is not null)
-            return Describe(single.Kind, null, single.Charging);
-        return Describe(DeviceKind.Unknown, null, null);
+        return width;
     }
 
-    private static PillFace Describe(DeviceKind kind, int? percent, bool? charging)
+    public static double SlotWidthDip(PillSlot slot)
     {
-        var level = BatteryMath.NormalizePercent(percent);
-        return new PillFace(
-            SilhouetteFor(kind),
+        var width = IconDip + IconTextGapDip + TextWidthDip(slot.PercentText);
+        if (slot.Charging)
+            width += TextBoltGapDip + BoltWidthDip;
+        return width;
+    }
+
+    /// <summary>
+    /// One box per device, in list order. An empty list still yields one generic
+    /// 「未知」slot so the pill can sit on the bar before a reading arrives.
+    /// That placeholder has no percentage. No battery outline is measured.
+    /// </summary>
+    public static PillStrip Arrange(IEnumerable<PeripheralDevice> devices, double borderDip = 1)
+    {
+        if (borderDip < 0 || !double.IsFinite(borderDip))
+            borderDip = 1;
+
+        var slots = new List<PillSlot>();
+        foreach (var device in devices)
+            slots.Add(Describe(device));
+        if (slots.Count == 0)
+            slots.Add(new PillSlot(DeviceSilhouette.Generic, null, UnknownText, false, BatteryTone.Unknown));
+
+        var boxes = new List<PillSlotBox>(slots.Count);
+        var x = borderDip + PadDip;
+        for (var i = 0; i < slots.Count; i++)
+        {
+            var slot = slots[i];
+            var textWidth = TextWidthDip(slot.PercentText);
+            var width = SlotWidthDip(slot);
+            double? boltX = slot.Charging
+                ? x + IconDip + IconTextGapDip + textWidth + TextBoltGapDip
+                : null;
+            boxes.Add(new PillSlotBox(
+                x,
+                width,
+                x,
+                x + IconDip + IconTextGapDip,
+                textWidth,
+                boltX,
+                slot));
+            x += width;
+            if (i < slots.Count - 1)
+                x += DeviceGapDip;
+        }
+
+        x += PadDip + borderDip;
+        return new PillStrip(slots, boxes, x, HeightDip, DeviceGapDip, borderDip);
+    }
+
+    private static PillSlot Describe(PeripheralDevice device)
+    {
+        var level = BatteryMath.NormalizePercent(device.BatteryPercent);
+        return new PillSlot(
+            SilhouetteFor(device.Kind),
             level,
             PercentText(level),
-            FillFraction(level),
-            ShowCharging(charging));
+            ShowCharging(device.Charging),
+            BatteryMath.Tone(level));
     }
 }

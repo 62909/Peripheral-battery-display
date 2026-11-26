@@ -8,8 +8,9 @@ public class TaskbarPlacementTests
     public void Default_fraction_sits_toward_the_end_of_a_bottom_bar()
     {
         var bar = new TaskbarBounds(0, 1040, 1920, 40, TaskbarEdge.Bottom);
+        var along = PillComposition.Arrange([]).WidthDip;
         var widget = TaskbarPlacement.Fit(bar, 96);
-        Assert.Equal(112, widget.Width);
+        Assert.Equal((int)along, widget.Width);
         Assert.Equal(32, widget.Height);
         var (x, y) = TaskbarPlacement.Place(bar, widget, TaskbarPlacement.DefaultFraction);
         Assert.Equal(1040 + 4, y);
@@ -152,5 +153,63 @@ public class TaskbarPlacementTests
     {
         Assert.Equal(144, TaskbarPlacement.DipToPx(96, 144));
         Assert.Equal(96, TaskbarPlacement.PxToDip(144, 144), 3);
+    }
+
+    [Fact]
+    public void Pill_width_grows_with_devices_and_dpi_and_stays_on_the_bar()
+    {
+        var one = PillComposition.Arrange(
+        [
+            new PeripheralDevice("m", "鼠标", DeviceKind.Mouse, 18),
+        ]);
+        var two = PillComposition.Arrange(
+        [
+            new PeripheralDevice("m", "鼠标", DeviceKind.Mouse, 18),
+            new PeripheralDevice("k", "键盘", DeviceKind.Keyboard, 72, Charging: true),
+        ]);
+        Assert.True(two.WidthDip > one.WidthDip);
+
+        var bar = new TaskbarBounds(0, 1040, 1920, 48, TaskbarEdge.Bottom);
+        var narrow = TaskbarPlacement.Fit(bar, 96, one.WidthDip);
+        var wide = TaskbarPlacement.Fit(bar, 96, two.WidthDip);
+        Assert.Equal((int)Math.Ceiling(one.WidthDip), narrow.Width);
+        Assert.Equal((int)Math.Ceiling(two.WidthDip), wide.Width);
+        Assert.True(wide.Width > narrow.Width);
+        Assert.Equal(32, wide.Height);
+        Assert.Equal(1, TaskbarPlacement.ContentScale(bar, 96, two.WidthDip));
+
+        var hi = TaskbarPlacement.Fit(bar, 144, two.WidthDip);
+        Assert.Equal((int)Math.Ceiling(two.WidthDip * 144 / 96.0), hi.Width);
+        Assert.True(hi.Width > wide.Width);
+
+        var (x, y) = TaskbarPlacement.Place(bar, wide, TaskbarPlacement.DefaultFraction);
+        Assert.InRange(x, bar.X, bar.X + bar.Width - wide.Width);
+        Assert.InRange(y, bar.Y, bar.Y + bar.Height - wide.Height);
+    }
+
+    [Fact]
+    public void A_strip_wider_than_the_bar_scales_down_instead_of_dropping_devices()
+    {
+        var devices = Enumerable.Range(0, 12)
+            .Select(i => new PeripheralDevice($"d{i}", "鼠标", DeviceKind.Mouse, 50 + (i % 3)))
+            .ToArray();
+        var strip = PillComposition.Arrange(devices);
+        Assert.Equal(12, strip.Slots.Count);
+        Assert.Equal(11, strip.Boxes.Zip(strip.Boxes.Skip(1), (a, b) => b.X - (a.X + a.Width)).Count(gap => gap == strip.GapDip));
+
+        var bar = new TaskbarBounds(0, 1000, 300, 40, TaskbarEdge.Bottom);
+        Assert.True(strip.WidthDip > bar.Width);
+        var fit = TaskbarPlacement.Fit(bar, 96, strip.WidthDip);
+        Assert.InRange(fit.Width, 1, bar.Width - 4);
+        var scale = TaskbarPlacement.ContentScale(bar, 96, strip.WidthDip);
+        Assert.InRange(scale, 0.05, 0.99);
+        var preferred = (int)Math.Ceiling(strip.WidthDip);
+        Assert.Equal(fit.Width / (double)preferred, scale, 5);
+
+        var vertical = new TaskbarBounds(0, 0, 48, 220, TaskbarEdge.Left);
+        var turned = TaskbarPlacement.Fit(vertical, 96, 400);
+        Assert.True(turned.Height < vertical.Height);
+        Assert.True(turned.Width <= vertical.Width);
+        Assert.True(TaskbarPlacement.ContentScale(vertical, 96, 400) < 1);
     }
 }

@@ -8,12 +8,12 @@ namespace PeripheralBattery.Ui;
 
 internal readonly record struct Palette(bool Light)
 {
-    public Color Background => Light ? Color.FromRgb(247, 247, 247) : Color.FromRgb(32, 32, 32);
-    public Color Text => Light ? Color.FromRgb(28, 28, 28) : Color.FromRgb(240, 240, 240);
-    public Color Muted => Light ? Color.FromRgb(92, 92, 92) : Color.FromRgb(176, 176, 176);
-    public Color Line => Light ? Color.FromRgb(214, 214, 214) : Color.FromRgb(68, 68, 68);
-    public Color Hover => Light ? Color.FromRgb(232, 232, 232) : Color.FromRgb(48, 48, 48);
-    public Color Accent => Color.FromRgb(0, 120, 212);
+    public Color Background => ColorOf(BatteryColors.Background(Light));
+    public Color Text => ColorOf(BatteryColors.Text(Light));
+    public Color Muted => ColorOf(BatteryColors.Muted(Light));
+    public Color Line => ColorOf(BatteryColors.Line(Light));
+    public Color Hover => ColorOf(BatteryColors.Hover(Light));
+    public Color Accent => ColorOf(BatteryColors.Accent);
 
     public SolidColorBrush Brush(Color color)
     {
@@ -22,17 +22,9 @@ internal readonly record struct Palette(bool Light)
         return brush;
     }
 
-    public SolidColorBrush Tone(BatteryTone tone)
-    {
-        var color = tone switch
-        {
-            BatteryTone.Ok => Light ? Color.FromRgb(14, 124, 74) : Color.FromRgb(126, 214, 160),
-            BatteryTone.Low => Light ? Color.FromRgb(156, 90, 0) : Color.FromRgb(242, 184, 75),
-            BatteryTone.Critical => Light ? Color.FromRgb(186, 42, 36) : Color.FromRgb(255, 128, 112),
-            _ => Muted,
-        };
-        return Brush(color);
-    }
+    public SolidColorBrush Tone(BatteryTone tone) => Brush(ColorOf(BatteryColors.Tone(tone, Light)));
+
+    private static Color ColorOf(RgbColor color) => Color.FromRgb(color.R, color.G, color.B);
 }
 
 internal static class SystemTheme
