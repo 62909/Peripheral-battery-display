@@ -7,8 +7,9 @@ namespace PeripheralBattery.Sources;
 
 /// <summary>
 /// 38EE:0022 on the Huaxi collection FFA8:0002 (USB MI_02).
-/// The mouse interface MI_00 is not queried.
-/// DevGetInfo is sent only after an interrupt read is armed.
+/// The mouse interface MI_00 / 0001:0002 is never opened.
+/// The info collection is opened exclusively first, then shared if that fails.
+/// initDevice runs before DevGetInfo, and each command arms its read first.
 /// </summary>
 internal sealed class AkkoHuaxiSource : IVendorBatterySource
 {
@@ -23,6 +24,7 @@ internal sealed class AkkoHuaxiSource : IVendorBatterySource
     private static List<RawDeviceReading> Read(CancellationToken cancellationToken)
     {
         var readings = new List<RawDeviceReading>();
+        var openFailed = false;
         NativeMethods.HidD_GetHidGuid(out var guid);
         var set = NativeMethods.SetupDiGetClassDevs(ref guid, null, IntPtr.Zero, NativeMethods.DigcfPresent | NativeMethods.DigcfDeviceInterface);
         if (set == IntPtr.Zero || set == NativeMethods.InvalidHandle)
@@ -43,10 +45,14 @@ internal sealed class AkkoHuaxiSource : IVendorBatterySource
                 var ids = DeviceIdentity.ParseVidPid(path);
                 if (ids.VendorId is not int vid || ids.ProductId is not int pid || !AkkoHuaxiMouse.IsCandidate(vid, pid))
                     continue;
+                if (AkkoHuaxiMouse.IsMouseInterfacePath(path))
+                    continue;
                 try
                 {
-                    if (Probe(path, cancellationToken) is RawDeviceReading reading)
+                    if (Probe(path, cancellationToken, out var failed) is RawDeviceReading reading)
                         readings.Add(reading);
+                    else if (failed)
+                        openFailed = true;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -59,14 +65,22 @@ internal sealed class AkkoHuaxiSource : IVendorBatterySource
             NativeMethods.SetupDiDestroyDeviceInfoList(set);
         }
 
+        if (readings.Count == 0 && openFailed)
+            readings.Add(Reading(null, null, AkkoHuaxiMouse.NoteInterfaceBusy));
         return readings;
     }
 
-    private static RawDeviceReading? Probe(string path, CancellationToken cancellationToken)
+    private static RawDeviceReading? Probe(string path, CancellationToken cancellationToken, out bool openFailed)
     {
-        var handle = Open(path);
-        if (handle == IntPtr.Zero || handle == NativeMethods.InvalidHandle)
+        openFailed = false;
+        var handle = Open(path, exclusive: true);
+        if (!Usable(handle))
+            handle = Open(path, exclusive: false);
+        if (!Usable(handle))
+        {
+            openFailed = true;
             return null;
+        }
 
         try
         {
@@ -83,12 +97,14 @@ internal sealed class AkkoHuaxiSource : IVendorBatterySource
                 var caps = new HidCaps();
                 if (NativeMethods.HidP_GetCaps(preparsed, ref caps) != NativeMethods.HidPStatusSuccess)
                     return null;
+                if (caps.UsagePage == 0x0001 && caps.Usage == 0x0002)
+                    return null;
                 if (!AkkoHuaxiMouse.IsInfoCollection(caps.UsagePage, caps.Usage))
                     return null;
 
                 var name = ReadProduct(handle);
                 using var link = new AkkoHuaxiLink(handle, caps.InputReportByteLength, cancellationToken);
-                var result = AkkoHuaxiExchange.Run(
+                var result = AkkoHuaxiExchange.ReadBattery(
                     link,
                     caps.InputReportByteLength,
                     caps.OutputReportByteLength,
@@ -98,6 +114,7 @@ internal sealed class AkkoHuaxiSource : IVendorBatterySource
                     AkkoHuaxiExchangeStatus.Ok => Reading(name, result.Info.BatteryPercent, null),
                     AkkoHuaxiExchangeStatus.LevelOutOfRange => Reading(name, null, AkkoHuaxiMouse.NoteLevelOutOfRange),
                     AkkoHuaxiExchangeStatus.SendFailed => Reading(name, null, AkkoHuaxiMouse.NoteSendFailed),
+                    AkkoHuaxiExchangeStatus.MouseNotConnected => Reading(name, null, AkkoHuaxiMouse.NoteMouseNotConnected),
                     _ => Reading(name, null, AkkoHuaxiMouse.NoteNoInfoReply),
                 };
             }
@@ -125,15 +142,19 @@ internal sealed class AkkoHuaxiSource : IVendorBatterySource
         Note = note,
     };
 
-    private static IntPtr Open(string path)
+    private static IntPtr Open(string path, bool exclusive)
     {
-        // Shared read/write is the same open the browser uses. The collection
-        // already opens while the official page is closed, so exclusive access
-        // is not required to receive the report.
-        var share = NativeMethods.FileShareRead | NativeMethods.FileShareWrite | NativeMethods.FileShareDelete;
+        // The info collection is opened with no sharing first, like a page that
+        // owns the device. If that fails, fall back to the shared open.
+        var share = exclusive
+            ? 0u
+            : NativeMethods.FileShareRead | NativeMethods.FileShareWrite | NativeMethods.FileShareDelete;
         var access = NativeMethods.GenericRead | NativeMethods.GenericWrite;
         return NativeMethods.CreateFile(path, access, share, IntPtr.Zero, NativeMethods.OpenExisting, NativeMethods.FileFlagOverlapped, IntPtr.Zero);
     }
+
+    private static bool Usable(IntPtr handle) =>
+        handle != IntPtr.Zero && handle != NativeMethods.InvalidHandle;
 
     private static string? ReadPath(IntPtr set, ref SP_DEVICE_INTERFACE_DATA data)
     {
