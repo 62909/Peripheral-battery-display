@@ -32,8 +32,12 @@ internal static class NativeMethods
     public const int AbnFullscreenApp = 2;
     public const uint MonitorDefaultToNearest = 2;
     public const uint MonitorInfoPrimary = 1;
+    public const int SwpNoSize = 0x0001;
+    public const int SwpNoMove = 0x0002;
     public const int SwpNoActivate = 0x0010;
     public const int SwpShowWindow = 0x0040;
+    public const int GwlpHwndParent = -8;
+    public const uint GwHwndPrev = 3;
     public const uint GenericRead = 0x80000000;
     public const uint GenericWrite = 0x40000000;
     public const uint FileFlagOverlapped = 0x40000000;
@@ -115,6 +119,18 @@ internal static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern int SetWindowLong(IntPtr hwnd, int index, int value);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    public static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    public static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetWindow(IntPtr hwnd, uint command);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindow(IntPtr hwnd);
 
     [DllImport("user32.dll")]
     public static extern bool PostMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam);

@@ -19,6 +19,12 @@ public readonly record struct TaskbarBounds(int X, int Y, int Width, int Height,
 public readonly record struct WidgetSize(int Width, int Height);
 
 /// <summary>
+/// The overlay slot last applied on screen. TrayWindow is the tray HWND that
+/// owns the popup, or zero when the popup has no tray owner.
+/// </summary>
+public readonly record struct PlacedWidget(bool Shown, int X, int Y, int Width, int Height, long TrayWindow);
+
+/// <summary>
 /// Pure geometry for a window that sits inside the taskbar rectangle.
 /// The stored value is a fraction along the bar, so a later edge or monitor
 /// change keeps the same relative spot. Pixel positions are physical pixels.
@@ -100,6 +106,29 @@ public static class TaskbarPlacement
 
     public static bool ShouldShow(bool userEnabled, bool collapsed, bool fullscreenApp) =>
         userEnabled && !collapsed && !fullscreenApp;
+
+    /// <summary>
+    /// True when the overlay is already shown at this slot and owned by the same
+    /// tray window. The taskbar is topmost, and a click on its empty space raises
+    /// it over every sibling topmost window. An owned popup stays above its owner,
+    /// so that click does not cover the pill. Auto-hide and fullscreen are not
+    /// part of this comparison.
+    /// </summary>
+    public static bool SamePlace(PlacedWidget applied, PlacedWidget desired) =>
+        applied.Shown && desired.Shown
+        && applied.X == desired.X
+        && applied.Y == desired.Y
+        && applied.Width == desired.Width
+        && applied.Height == desired.Height
+        && applied.TrayWindow == desired.TrayWindow;
+
+    /// <summary>
+    /// Place again when the slot changed or the tray window is above the overlay.
+    /// A covering tray is the empty-space click: the bar was raised and the pill
+    /// has to be put back above it. Hiding for auto-hide or fullscreen is separate.
+    /// </summary>
+    public static bool NeedsRaise(PlacedWidget applied, PlacedWidget desired, bool trayCoversOverlay) =>
+        (desired.Shown && trayCoversOverlay) || !SamePlace(applied, desired);
 
     public static int VisibleThickness(
         TaskbarEdge edge,

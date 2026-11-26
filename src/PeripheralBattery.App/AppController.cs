@@ -18,7 +18,8 @@ public sealed class AppController : IDisposable
     private readonly TrayIconHost _tray;
     private readonly TaskbarWatcher _taskbar;
     private readonly DeviceListWindow _list;
-    private readonly TaskbarWidgetWindow _widget;
+    private TaskbarWidgetWindow _widget;
+    private bool _widgetDestroyed;
     private readonly Window _menuAnchor;
     private readonly DispatcherTimer _refreshTimer;
     private readonly DispatcherTimer _followTimer;
@@ -64,6 +65,7 @@ public sealed class AppController : IDisposable
         WindowChrome.Apply(_menuAnchor, noActivate: true);
         _list.Attach(this);
         _widget.Attach(this);
+        WatchWidget(_widget);
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
         _followTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _refreshTimer.Tick += (_, _) => RequestRefresh();
@@ -148,7 +150,8 @@ public sealed class AppController : IDisposable
         _taskbar.Detach();
         _tray.Dispose();
         UserSettingsStore.Save(SettingsPath, _settings);
-        _widget.Close();
+        if (!_widgetDestroyed)
+            _widget.Close();
         _list.Close();
         _menuAnchor.Close();
         _shutdown.Dispose();
@@ -238,6 +241,7 @@ public sealed class AppController : IDisposable
         var lowest = BatteryMath.Lowest(_devices);
         var icon = IconPainter.Create(BatteryMath.TrayGlyph(lowest), BatteryMath.Tone(lowest));
         _tray.Update(icon, UiText.TrayTip(lowest, _devices.Count, Demo));
+        EnsureWidget();
         _widget.SetReading(lowest, _devices.Count, _placing, SystemTheme.TaskbarIsLight(), Demo);
         if (_list.IsVisible)
             _list.SetState(_devices, _hasRefreshed, _error, Demo, _refreshedAt, SystemTheme.AppsAreLight());
@@ -295,13 +299,13 @@ public sealed class AppController : IDisposable
     {
         if (_disposed)
             return;
+        EnsureWidget();
         var bar = ResolveAnchor();
         var show = bar is not null && TaskbarPlacement.ShouldShow(_settings.TaskbarWidgetEnabled, bar.Collapsed, _taskbar.FullscreenApp);
         if (!show || bar is null)
         {
             _placedX = int.MinValue;
-            if (_widget.IsVisible)
-                _widget.Hide();
+            HideWidget();
             return;
         }
 
@@ -313,33 +317,132 @@ public sealed class AppController : IDisposable
         var (x, y) = TaskbarPlacement.Place(bar.Bounds, size, _settings.AnchorFraction);
         _widgetWidth = size.Width;
         _widgetHeight = size.Height;
-        var unchanged = _widget.IsVisible && x == _placedX && y == _placedY && size.Width == _placedW && size.Height == _placedH && _placing == _placedMode;
+        var wasShown = _widget.IsVisible;
+        var hwnd = WidgetHandle();
+        var tray = bar.TrayWindow;
+        var owner = OwnerOf(hwnd);
+        var applied = new PlacedWidget(wasShown, _placedX, _placedY, _placedW, _placedH, owner);
+        var desired = new PlacedWidget(true, x, y, size.Width, size.Height, tray.ToInt64());
+        var ownedByTray = tray != IntPtr.Zero && owner == tray.ToInt64();
+        var covered = wasShown && !ownedByTray && hwnd != IntPtr.Zero && tray != IntPtr.Zero && !IsAbove(hwnd, tray);
+        var raise = TaskbarPlacement.NeedsRaise(applied, desired, covered) || _placing != _placedMode;
         _widget.SetReading(BatteryMath.Lowest(_devices), _devices.Count, _placing, SystemTheme.TaskbarIsLight(), Demo);
-        if (unchanged)
+        if (!raise)
             return;
+
+        _widget.Width = Math.Max(1, TaskbarPlacement.PxToDip(size.Width, bar.Dpi));
+        _widget.Height = Math.Max(1, TaskbarPlacement.PxToDip(size.Height, bar.Dpi));
+        _widget.Left = TaskbarPlacement.PxToDip(x, bar.Dpi);
+        _widget.Top = TaskbarPlacement.PxToDip(y, bar.Dpi);
+        if (!wasShown)
+            _widget.Show();
+        hwnd = WidgetHandle();
+        if (hwnd == IntPtr.Zero)
+            return;
+
         _placedX = x;
         _placedY = y;
         _placedW = size.Width;
         _placedH = size.Height;
         _placedMode = _placing;
-        _widget.Width = Math.Max(1, TaskbarPlacement.PxToDip(size.Width, bar.Dpi));
-        _widget.Height = Math.Max(1, TaskbarPlacement.PxToDip(size.Height, bar.Dpi));
-        _widget.Left = TaskbarPlacement.PxToDip(x, bar.Dpi);
-        _widget.Top = TaskbarPlacement.PxToDip(y, bar.Dpi);
-        if (!_widget.IsVisible)
-            _widget.Show();
-        var hwnd = new WindowInteropHelper(_widget).Handle;
-        if (hwnd != IntPtr.Zero)
+        // Shell_TrayWnd is topmost. A click on empty taskbar space raises it
+        // over other topmost windows and covers this overlay. Owning the popup
+        // to that tray keeps the pill above the bar. SetWindowPos applies the
+        // owner change; without it the click stays covered.
+        BindTrayOwner(hwnd, tray);
+        NativeMethods.SetWindowPos(
+            hwnd,
+            NativeMethods.HwndTopmost,
+            x,
+            y,
+            size.Width,
+            size.Height,
+            (uint)(NativeMethods.SwpNoActivate | NativeMethods.SwpShowWindow));
+    }
+
+    private void HideWidget()
+    {
+        if (_widgetDestroyed)
+            return;
+        if (_widget.IsVisible)
+            _widget.Hide();
+        ReleaseTrayOwner();
+    }
+
+    private void EnsureWidget()
+    {
+        if (!_widgetDestroyed)
         {
-            NativeMethods.SetWindowPos(
-                hwnd,
-                NativeMethods.HwndTopmost,
-                x,
-                y,
-                size.Width,
-                size.Height,
-                (uint)(NativeMethods.SwpNoActivate | NativeMethods.SwpShowWindow));
+            var hwnd = new WindowInteropHelper(_widget).Handle;
+            if (hwnd == IntPtr.Zero || NativeMethods.IsWindow(hwnd))
+                return;
+            _widgetDestroyed = true;
         }
+
+        _widgetDestroyed = false;
+        _placedX = int.MinValue;
+        var replacement = new TaskbarWidgetWindow();
+        replacement.Attach(this);
+        WatchWidget(replacement);
+        _widget = replacement;
+    }
+
+    private void WatchWidget(TaskbarWidgetWindow widget)
+    {
+        widget.Closed += (_, _) =>
+        {
+            if (!_disposed && ReferenceEquals(widget, _widget))
+                _widgetDestroyed = true;
+        };
+    }
+
+    private IntPtr WidgetHandle() => _widgetDestroyed ? IntPtr.Zero : new WindowInteropHelper(_widget).Handle;
+
+    private static long OwnerOf(IntPtr hwnd) =>
+        hwnd == IntPtr.Zero ? 0 : NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GwlpHwndParent).ToInt64();
+
+    private static void BindTrayOwner(IntPtr hwnd, IntPtr tray)
+    {
+        if (hwnd == IntPtr.Zero || tray == IntPtr.Zero || !NativeMethods.IsWindow(tray))
+            return;
+        if (NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GwlpHwndParent) == tray)
+            return;
+        NativeMethods.SetWindowLongPtr(hwnd, NativeMethods.GwlpHwndParent, tray);
+    }
+
+    private void ReleaseTrayOwner()
+    {
+        var hwnd = WidgetHandle();
+        if (hwnd == IntPtr.Zero)
+            return;
+        if (NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GwlpHwndParent) == IntPtr.Zero)
+            return;
+        NativeMethods.SetWindowLongPtr(hwnd, NativeMethods.GwlpHwndParent, IntPtr.Zero);
+        NativeMethods.SetWindowPos(
+            hwnd,
+            NativeMethods.HwndTopmost,
+            0,
+            0,
+            0,
+            0,
+            (uint)(NativeMethods.SwpNoMove | NativeMethods.SwpNoSize | NativeMethods.SwpNoActivate));
+    }
+
+    private static bool IsAbove(IntPtr window, IntPtr other)
+    {
+        if (window == IntPtr.Zero || other == IntPtr.Zero || window == other)
+            return false;
+        var guard = 0;
+        for (var cursor = NativeMethods.GetWindow(window, NativeMethods.GwHwndPrev);
+             cursor != IntPtr.Zero && guard < 48;
+             cursor = NativeMethods.GetWindow(cursor, NativeMethods.GwHwndPrev))
+        {
+            guard++;
+            if (cursor == other)
+                return false;
+        }
+
+        return true;
     }
 
     private TaskbarSnapshot? ResolveAnchor() =>
@@ -375,7 +478,8 @@ public sealed class AppController : IDisposable
         _placing = false;
         _settings.TaskbarWidgetEnabled = false;
         UserSettingsStore.Save(SettingsPath, _settings);
-        _widget.Hide();
+        _placedX = int.MinValue;
+        HideWidget();
     }
 
     private void ToggleStartup()
