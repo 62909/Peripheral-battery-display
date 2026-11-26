@@ -6,6 +6,8 @@ namespace PeripheralBattery.Sources;
 
 /// <summary>
 /// 空影 TAN8 Ultra on the shared 38EE:0023 / 38EE:0024 interfaces.
+/// 38EE:0022 is not a candidate: the official filters do not list it, and a
+/// standard mouse collection is not opened as FF1C:0092.
 /// Opens only that vendor collection. Identity is the driver's read-only
 /// 0x01 / 0x30 / 0x02 wrap. 0x1A is sent only after cid 2.
 /// A candidate that cannot be confirmed is still listed, with a note and no percentage.

@@ -7,6 +7,7 @@ public class AkkoTan8UltraTests
     [Theory]
     [InlineData(0x38EE, 0x0023, true)]
     [InlineData(0x38EE, 0x0024, true)]
+    [InlineData(0x38EE, 0x0022, false)]
     [InlineData(0x38EE, 0x000C, false)]
     [InlineData(0x38EE, 0x000F, false)]
     [InlineData(0x3151, 0x5006, false)]
@@ -65,6 +66,15 @@ public class AkkoTan8UltraTests
         Assert.False(AkkoTan8Ultra.IsThisModel(0x38EE, 0x000F, identity));
         Assert.False(AkkoTan8Ultra.AllowsBatteryQuery(0x3151, 0x5006, identity));
         Assert.Null(AkkoTan8Ultra.ModelNameFor(0x38EE, 0x000C, identity));
+        Assert.False(AkkoTan8Ultra.IsThisModel(0x38EE, 0x0022, identity));
+        Assert.False(AkkoTan8Ultra.AllowsBatteryQuery(0x38EE, 0x0022, identity));
+        Assert.Null(AkkoTan8Ultra.ModelNameFor(0x38EE, 0x0022, identity));
+
+        var mouseCollection = AkkoTan8Ultra.Decide(0x38EE, 0x0022, Tan8ProbeFailure.None, identity, true, Battery(80, 1), true);
+        Assert.Equal(Tan8Outcome.None, mouseCollection.Outcome);
+        Assert.Null(mouseCollection.DisplayName);
+        Assert.Null(mouseCollection.BatteryPercent);
+        Assert.Null(mouseCollection.Note);
     }
 
     [Fact]

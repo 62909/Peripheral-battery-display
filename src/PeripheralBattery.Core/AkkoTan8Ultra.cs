@@ -5,7 +5,10 @@ namespace PeripheralBattery.Core;
 /// driver.akkogear.com (device module M0019-8762+3950-TAN8, productName15).
 /// Wired <c>38EE:0023</c> and 2.4G <c>38EE:0024</c> share those USB IDs with
 /// 疾风 TAN7 Ultra (cid 1) and 灵动 V9 Ultra / Dash V9 Ultra (cid 5).
-/// The vendor collection is <c>FF1C:0092</c>. Identity is command 0x30
+/// The public driver filters do not list <c>38EE:0022</c>. Battery commands stay
+/// on vendor collection <c>FF1C:0092</c>; a standard mouse collection
+/// (<c>0001:0002</c>) is not queried.
+/// Identity is command 0x30
 /// (wrapped by the driver's 0x01 / 0x02 pair); byte 0x0A is cid. Battery is
 /// sent only after cid 2. Payloads below do not include the report id.
 /// </summary>

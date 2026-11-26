@@ -9,9 +9,17 @@ namespace PeripheralBattery.Sources;
 /// Standard HID Battery System page (0x85). Vendor pages are not interpreted.
 /// Wired HID devices are listed only when that page is actually present,
 /// so a built-in keyboard without a battery report stays out of the list.
+/// Every present interface is also recorded as a sighting (name and ids only).
+/// That record is not a battery reading and does not send a vendor command.
 /// </summary>
 internal sealed class HidBatterySource : IPeripheralSource
 {
+    private readonly List<HidInterfaceSighting> _sightings = [];
+
+    public IReadOnlyList<HidInterfaceSighting> Sightings => _sightings;
+
+    /// <summary>True after a scan finishes. A cancelled scan stays false so the UI does not claim it saw nothing.</summary>
+    public bool ScanCompleted { get; private set; }
     private static readonly ushort[] InterestingUsages =
     [
         BatteryParsing.UsageCapacityMode,
@@ -28,13 +36,18 @@ internal sealed class HidBatterySource : IPeripheralSource
         return Task.Run(() => (IReadOnlyList<RawDeviceReading>)Read(cancellationToken), cancellationToken);
     }
 
-    private static List<RawDeviceReading> Read(CancellationToken cancellationToken)
+    private List<RawDeviceReading> Read(CancellationToken cancellationToken)
     {
+        _sightings.Clear();
+        ScanCompleted = false;
         var readings = new List<RawDeviceReading>();
         NativeMethods.HidD_GetHidGuid(out var guid);
         var set = NativeMethods.SetupDiGetClassDevs(ref guid, null, IntPtr.Zero, NativeMethods.DigcfPresent | NativeMethods.DigcfDeviceInterface);
         if (set == IntPtr.Zero || set == NativeMethods.InvalidHandle)
+        {
+            ScanCompleted = true;
             return readings;
+        }
 
         try
         {
@@ -49,12 +62,17 @@ internal sealed class HidBatterySource : IPeripheralSource
                     continue;
                 try
                 {
-                    if (TryReadDevice(path, out var reading))
+                    if (TryReadDevice(path, out var reading, out var sighting))
                         readings.Add(reading);
+                    if (sighting is HidInterfaceSighting seen)
+                        _sightings.Add(seen);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     System.Diagnostics.Debug.WriteLine(ex);
+                    var parsed = DeviceIdentity.ParseVidPid(path);
+                    if (parsed.VendorId is int vid && parsed.ProductId is int pid)
+                        _sightings.Add(new HidInterfaceSighting(vid, pid, null, null, null));
                 }
             }
         }
@@ -63,12 +81,21 @@ internal sealed class HidBatterySource : IPeripheralSource
             NativeMethods.SetupDiDestroyDeviceInfoList(set);
         }
 
+        ScanCompleted = true;
         return readings;
     }
 
-    private static bool TryReadDevice(string path, out RawDeviceReading reading)
+    private static bool TryReadDevice(string path, out RawDeviceReading reading, out HidInterfaceSighting? sighting)
     {
         reading = null!;
+        var parsedIds = DeviceIdentity.ParseVidPid(path);
+        int? vid = parsedIds.VendorId;
+        int? pid = parsedIds.ProductId;
+        string? reportedName = null;
+        int? usagePage = null;
+        int? usage = null;
+        sighting = ToSighting(vid, pid, reportedName, usagePage, usage);
+
         var handle = Open(path);
         if (handle == IntPtr.Zero || handle == NativeMethods.InvalidHandle)
             return false;
@@ -78,9 +105,16 @@ internal sealed class HidBatterySource : IPeripheralSource
         {
             var attributes = new HidAttributes { Size = Marshal.SizeOf<HidAttributes>() };
             var gotAttributes = NativeMethods.HidD_GetAttributes(handle, ref attributes);
+            if (gotAttributes)
+            {
+                vid = attributes.VendorId;
+                pid = attributes.ProductId;
+            }
+
             var product = ReadString(handle, NativeMethods.HidD_GetProductString);
             var manufacturer = ReadString(handle, NativeMethods.HidD_GetManufacturerString);
             var name = DeviceIdentity.PreferReportedName(product, manufacturer);
+            reportedName = string.IsNullOrWhiteSpace(product) ? null : product.Trim();
             if (!NativeMethods.HidD_GetPreparsedData(handle, out preparsed) || preparsed == IntPtr.Zero)
                 return false;
 
@@ -88,6 +122,8 @@ internal sealed class HidBatterySource : IPeripheralSource
             if (NativeMethods.HidP_GetCaps(preparsed, ref caps) != NativeMethods.HidPStatusSuccess)
                 return false;
 
+            usagePage = caps.UsagePage;
+            usage = caps.Usage;
             var samples = new List<HidUsageValue>();
             var hasBatteryPage = Collect(handle, preparsed, caps, samples);
             var kind = DeviceIdentity.FromHidCollection(caps.UsagePage, caps.Usage);
@@ -96,7 +132,6 @@ internal sealed class HidBatterySource : IPeripheralSource
             if (DeviceIdentity.IsReceiverName(name) && !hasBatteryPage)
                 return false;
 
-            var parsedIds = DeviceIdentity.ParseVidPid(path);
             reading = new RawDeviceReading
             {
                 SourceId = "hid",
@@ -104,8 +139,8 @@ internal sealed class HidBatterySource : IPeripheralSource
                 BluetoothAddress = DeviceIdentity.TryExtractBluetoothAddress(path),
                 InstanceId = path,
                 WindowsName = name,
-                VendorId = gotAttributes ? attributes.VendorId : parsedIds.VendorId,
-                ProductId = gotAttributes ? attributes.ProductId : parsedIds.ProductId,
+                VendorId = vid,
+                ProductId = pid,
                 KindHint = kind,
                 BatteryPercent = BatteryParsing.ParseHidBatteryPercent(samples),
             };
@@ -113,10 +148,18 @@ internal sealed class HidBatterySource : IPeripheralSource
         }
         finally
         {
+            sighting = ToSighting(vid, pid, reportedName, usagePage, usage);
             if (preparsed != IntPtr.Zero)
                 NativeMethods.HidD_FreePreparsedData(preparsed);
             NativeMethods.CloseHandle(handle);
         }
+    }
+
+    private static HidInterfaceSighting? ToSighting(int? vid, int? pid, string? reportedName, int? usagePage, int? usage)
+    {
+        if (vid is null && pid is null)
+            return null;
+        return new HidInterfaceSighting(vid, pid, reportedName, usagePage, usage);
     }
 
     private static bool Collect(IntPtr handle, IntPtr preparsed, HidCaps caps, List<HidUsageValue> samples)

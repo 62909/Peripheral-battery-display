@@ -34,7 +34,8 @@ public partial class DeviceListWindow : Window
         string? error,
         bool demo,
         DateTime? refreshedAt,
-        bool light)
+        bool light,
+        string? hidSightings = null)
     {
         var palette = new Palette(light);
         var background = palette.Brush(palette.Background);
@@ -68,11 +69,23 @@ public partial class DeviceListWindow : Window
         var showEmpty = hasRefreshed && devices.Count == 0;
         EmptyText.Visibility = showEmpty ? Visibility.Visible : Visibility.Collapsed;
         EmptyText.Text = UiText.Empty;
-        if (showEmpty)
+        if (!showEmpty)
+        {
+            foreach (var device in devices)
+                Rows.Children.Add(BuildRow(device, palette, text, muted));
+        }
+
+        if (string.IsNullOrWhiteSpace(hidSightings))
             return;
 
-        foreach (var device in devices)
-            Rows.Children.Add(BuildRow(device, palette, text, muted));
+        Rows.Children.Add(new TextBlock
+        {
+            Text = hidSightings,
+            FontSize = 11,
+            Foreground = muted,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(12, 8, 12, 10),
+        });
     }
 
     public new void Show()
