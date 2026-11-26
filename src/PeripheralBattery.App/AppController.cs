@@ -32,8 +32,8 @@ public sealed class AppController : IDisposable
     private bool _hasRefreshed;
     private DateTime? _refreshedAt;
     private bool _placing;
-    private int _widgetWidth = 84;
-    private int _widgetHeight = 32;
+    private int _widgetWidth = TaskbarPlacement.PillAlongDip;
+    private int _widgetHeight = TaskbarPlacement.PillCrossDip;
     private int _placedX = int.MinValue;
     private int _placedY;
     private int _placedW;
@@ -243,7 +243,7 @@ public sealed class AppController : IDisposable
         var icon = IconPainter.Create(BatteryMath.TrayGlyph(lowest), BatteryMath.Tone(lowest));
         _tray.Update(icon, UiText.TrayTip(lowest, _devices.Count, Demo));
         EnsureWidget();
-        _widget.SetReading(lowest, _devices.Count, _placing, SystemTheme.TaskbarIsLight(), Demo);
+        PaintWidget();
         if (_list.IsVisible)
             _list.SetState(_devices, _hasRefreshed, _error, Demo, _refreshedAt, SystemTheme.AppsAreLight());
     }
@@ -313,6 +313,9 @@ public sealed class AppController : IDisposable
         MoveWidget(bar, TaskbarPlacement.Fit(bar.Bounds, bar.Dpi));
     }
 
+    private void PaintWidget() =>
+        _widget.SetReading(PillComposition.Select(_devices), _devices.Count, _placing, SystemTheme.TaskbarIsLight(), Demo);
+
     private void MoveWidget(TaskbarSnapshot bar, WidgetSize size)
     {
         var (x, y) = TaskbarPlacement.Place(bar.Bounds, size, _settings.AnchorFraction);
@@ -327,7 +330,7 @@ public sealed class AppController : IDisposable
         var ownedByTray = tray != IntPtr.Zero && owner == tray.ToInt64();
         var covered = wasShown && !ownedByTray && hwnd != IntPtr.Zero && tray != IntPtr.Zero && !IsAbove(hwnd, tray);
         var raise = TaskbarPlacement.NeedsRaise(applied, desired, covered) || _placing != _placedMode;
-        _widget.SetReading(BatteryMath.Lowest(_devices), _devices.Count, _placing, SystemTheme.TaskbarIsLight(), Demo);
+        PaintWidget();
         if (!raise)
             return;
 

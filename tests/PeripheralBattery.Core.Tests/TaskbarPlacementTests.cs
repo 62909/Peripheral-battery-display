@@ -9,7 +9,7 @@ public class TaskbarPlacementTests
     {
         var bar = new TaskbarBounds(0, 1040, 1920, 40, TaskbarEdge.Bottom);
         var widget = TaskbarPlacement.Fit(bar, 96);
-        Assert.Equal(84, widget.Width);
+        Assert.Equal(112, widget.Width);
         Assert.Equal(32, widget.Height);
         var (x, y) = TaskbarPlacement.Place(bar, widget, TaskbarPlacement.DefaultFraction);
         Assert.Equal(1040 + 4, y);

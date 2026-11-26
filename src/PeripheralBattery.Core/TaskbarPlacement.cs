@@ -34,6 +34,13 @@ public static class TaskbarPlacement
     public const double DefaultFraction = 0.82;
     public const string PrimaryMonitor = "primary";
 
+    /// <summary>
+    /// Room for the taskbar pill in DIPs: device silhouette, battery silhouette,
+    /// and the percentage text (or 未知). The cross axis stays one taskbar row.
+    /// </summary>
+    public const int PillAlongDip = 112;
+    public const int PillCrossDip = 32;
+
     public static WidgetSize Fit(TaskbarBounds bar, int dpi)
     {
         if (dpi <= 0)
@@ -43,8 +50,8 @@ public static class TaskbarPlacement
         var horizontal = bar.Edge is TaskbarEdge.Top or TaskbarEdge.Bottom;
         var cross = Math.Max(0, horizontal ? bar.Height : bar.Width);
         var along = Math.Max(0, horizontal ? bar.Width : bar.Height);
-        var preferredAlong = Math.Max(1, (int)Math.Round(84 * scale));
-        var preferredCross = Math.Max(1, (int)Math.Round(32 * scale));
+        var preferredAlong = Math.Max(1, (int)Math.Round(PillAlongDip * scale));
+        var preferredCross = Math.Max(1, (int)Math.Round(PillCrossDip * scale));
         var crossSize = cross <= margin * 2
             ? Math.Max(1, cross - (cross > 2 ? 2 : 0))
             : Math.Min(preferredCross, Math.Max(1, cross - margin * 2));

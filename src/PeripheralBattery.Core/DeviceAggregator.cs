@@ -25,12 +25,14 @@ public static class DeviceAggregator
             var over = overrides.Find(key);
             var windowsName = BestWindowsName(group);
             var (vid, pid) = BestIds(group);
+            var power = PickBattery(group);
             devices.Add(new PeripheralDevice(
                 key,
                 DeviceIdentity.ResolveDisplayName(windowsName, vid, pid, over?.DisplayName),
                 DeviceIdentity.ResolveKind(windowsName, BestKind(group), over?.Kind),
-                PickBattery(group),
-                BestNote(group)));
+                power.Percent,
+                BestNote(group),
+                power.Charging));
         }
 
         return devices
@@ -90,17 +92,30 @@ public static class DeviceAggregator
             .FirstOrDefault(note => !string.IsNullOrWhiteSpace(note));
     }
 
-    private static int? PickBattery(List<RawDeviceReading> group)
+    private readonly record struct PickedBattery(int? Percent, bool? Charging);
+
+    /// <summary>
+    /// Percentage rules are unchanged: the highest priority that reported a
+    /// 0–100 value wins, and two different values at that priority stay unknown.
+    /// Charging is taken only from those winning readings. An omitted flag is
+    /// not a vote. One explicit value is kept; true and false together stay null.
+    /// </summary>
+    private static PickedBattery PickBattery(List<RawDeviceReading> group)
     {
         var known = group
-            .Select(r => (r.Priority, Percent: BatteryMath.NormalizePercent(r.BatteryPercent)))
+            .Select(r => (r.Priority, Percent: BatteryMath.NormalizePercent(r.BatteryPercent), r.Charging))
             .Where(r => r.Percent is not null)
             .ToList();
         if (known.Count == 0)
-            return null;
+            return new(null, null);
         var bestPriority = known.Max(r => r.Priority);
-        var values = known.Where(r => r.Priority == bestPriority).Select(r => r.Percent!.Value).Distinct().ToList();
-        return values.Count == 1 ? values[0] : null;
+        var winners = known.Where(r => r.Priority == bestPriority).ToList();
+        var values = winners.Select(r => r.Percent!.Value).Distinct().ToList();
+        if (values.Count != 1)
+            return new(null, null);
+        var flags = winners.Where(r => r.Charging is not null).Select(r => r.Charging!.Value).Distinct().ToList();
+        bool? charging = flags.Count == 1 ? flags[0] : null;
+        return new(values[0], charging);
     }
 }
 
