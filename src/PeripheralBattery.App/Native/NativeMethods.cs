@@ -40,6 +40,8 @@ internal static class NativeMethods
     public const uint WaitObject0 = 0;
     public const uint WaitTimeout = 0x00000102;
     public const int ErrorIoPending = 997;
+    public const int ErrorAccessDenied = 5;
+    public const int ErrorSharingViolation = 32;
     public const uint FileShareRead = 0x00000001;
     public const uint FileShareWrite = 0x00000002;
     public const uint FileShareDelete = 0x00000004;
@@ -161,6 +163,9 @@ internal static class NativeMethods
 
     [DllImport("hid.dll", SetLastError = true)]
     public static extern bool HidD_GetInputReport(IntPtr device, byte[] report, int length);
+
+    [DllImport("hid.dll", SetLastError = true)]
+    public static extern bool HidD_SetOutputReport(IntPtr device, byte[] report, int length);
 
     [DllImport("hid.dll", SetLastError = true)]
     public static extern bool HidD_FlushQueue(IntPtr device);

@@ -23,6 +23,31 @@ public class AggregatorTests
     }
 
     [Fact]
+    public void A_vendor_note_is_kept_and_does_not_invent_a_percentage()
+    {
+        var devices = DeviceAggregator.Combine(
+        [
+            new RawDeviceReading
+            {
+                SourceId = "akko-tan8-ultra",
+                Priority = SourcePriority.Vendor,
+                InstanceId = "akko-tan8:38EE:0024",
+                VendorId = 0x38EE,
+                ProductId = 0x0024,
+                KindHint = DeviceKind.Mouse,
+                BatteryPercent = null,
+                Note = AkkoTan8Ultra.NoteNoIdentityReply,
+            },
+        ], EmptyOverrideStore.Instance);
+
+        var device = Assert.Single(devices);
+        Assert.Null(device.DisplayName);
+        Assert.Null(device.BatteryPercent);
+        Assert.Equal(AkkoTan8Ultra.NoteNoIdentityReply, device.Note);
+        Assert.Equal(DeviceKind.Mouse, device.Kind);
+    }
+
+    [Fact]
     public void Gatt_wins_over_a_different_windows_property_reading()
     {
         var devices = DeviceAggregator.Combine(

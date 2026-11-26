@@ -32,13 +32,19 @@ public sealed record RawDeviceReading
     public int? ProductId { get; init; }
     public DeviceKind KindHint { get; init; } = DeviceKind.Unknown;
     public int? BatteryPercent { get; init; }
+
+    /// <summary>
+    /// Optional list note. Never a battery percentage.
+    /// </summary>
+    public string? Note { get; init; }
 }
 
 public sealed record PeripheralDevice(
     string Key,
     string? DisplayName,
     DeviceKind Kind,
-    int? BatteryPercent);
+    int? BatteryPercent,
+    string? Note = null);
 
 /// <summary>
 /// Manual name or type correction. Battery is intentionally absent:

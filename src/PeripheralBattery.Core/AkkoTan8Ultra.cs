@@ -91,6 +91,53 @@ public static class AkkoTan8Ultra
     public static bool AllowsBatteryQuery(int vendorId, int productId, ReadOnlySpan<byte> identityPayload) =>
         ModelNameFor(vendorId, productId, identityPayload) is not null;
 
+    public const string NoteInterfaceBusy = "接口被占用。请先退出官方驱动，再点刷新。";
+    public const string NoteNotVendorCollection = "找到这组 USB ID，但没有厂商集合 FF1C:0092。";
+    public const string NoteSendFailed = "查询没有发出去。请先退出官方驱动，再点刷新。";
+    public const string NoteNoIdentityReply = "没有收到型号应答。2.4G 休眠时先动一下鼠标，再点刷新。";
+    public const string NoteDifferentModel = "型号编号不是空影 TAN8 Ultra。";
+    public const string NoteNoBatteryReply = "没有收到电量报告。";
+
+    /// <summary>
+    /// What to show after probing one candidate interface. Battery stays null unless cid is 2
+    /// and the 0x1A report contains a 0–100 level. Other cids are not given this model name.
+    /// </summary>
+    public static Tan8Decision Decide(
+        int vendorId,
+        int productId,
+        Tan8ProbeFailure failure,
+        ReadOnlySpan<byte> identityPayload,
+        bool identityReceived,
+        ReadOnlySpan<byte> batteryPayload,
+        bool batteryReceived)
+    {
+        if (!IsCandidate(vendorId, productId))
+            return default;
+
+        if (identityReceived && TryReadCid(identityPayload, out var cid))
+        {
+            if (cid != ModelCid)
+                return new Tan8Decision(Tan8Outcome.DifferentModel, null, null);
+            int? percent = null;
+            if (batteryReceived)
+                percent = ParseBattery(batteryPayload).Percent;
+            var outcome = percent is null ? Tan8Outcome.NoBatteryReply : Tan8Outcome.Identified;
+            return new Tan8Decision(outcome, ModelName, percent);
+        }
+
+        var failed = failure switch
+        {
+            Tan8ProbeFailure.InterfaceBusy => Tan8Outcome.InterfaceBusy,
+            Tan8ProbeFailure.NotVendorCollection => Tan8Outcome.NotVendorCollection,
+            Tan8ProbeFailure.SendFailed => Tan8Outcome.SendFailed,
+            _ => Tan8Outcome.NoIdentityReply,
+        };
+        return new Tan8Decision(failed, null, null);
+    }
+
+    public static Tan8Decision Prefer(Tan8Decision current, Tan8Decision candidate) =>
+        candidate.Outcome > current.Outcome ? candidate : current;
+
     /// <summary>
     /// Byte 7 is the level. Values outside 0–100 are not a percentage and are not clipped.
     /// Byte 8 is the charge byte stored by the official driver with no closed set of values;
@@ -114,3 +161,38 @@ public static class AkkoTan8Ultra
 }
 
 public readonly record struct BatteryReport(int? Percent, byte? ChargeState);
+
+public enum Tan8ProbeFailure
+{
+    None = 0,
+    InterfaceBusy = 1,
+    NotVendorCollection = 2,
+    SendFailed = 3,
+    NoReply = 4,
+}
+
+public enum Tan8Outcome
+{
+    None = 0,
+    NotVendorCollection = 1,
+    InterfaceBusy = 2,
+    SendFailed = 3,
+    NoIdentityReply = 4,
+    DifferentModel = 5,
+    NoBatteryReply = 6,
+    Identified = 7,
+}
+
+public readonly record struct Tan8Decision(Tan8Outcome Outcome, string? DisplayName, int? BatteryPercent)
+{
+    public string? Note => Outcome switch
+    {
+        Tan8Outcome.InterfaceBusy => AkkoTan8Ultra.NoteInterfaceBusy,
+        Tan8Outcome.NotVendorCollection => AkkoTan8Ultra.NoteNotVendorCollection,
+        Tan8Outcome.SendFailed => AkkoTan8Ultra.NoteSendFailed,
+        Tan8Outcome.NoIdentityReply => AkkoTan8Ultra.NoteNoIdentityReply,
+        Tan8Outcome.DifferentModel => AkkoTan8Ultra.NoteDifferentModel,
+        Tan8Outcome.NoBatteryReply => AkkoTan8Ultra.NoteNoBatteryReply,
+        _ => null,
+    };
+}
