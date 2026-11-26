@@ -80,6 +80,29 @@ public class AkkoHuaxiMouseTests
     }
 
     [Fact]
+    public void Mi_00_is_the_mouse_collection_and_is_not_opened_by_path()
+    {
+        Assert.True(AkkoHuaxiMouse.IsMouseInterfacePath(@"\\?\hid#vid_38ee&pid_0022&mi_00&col01#{guid}"));
+        Assert.True(AkkoHuaxiMouse.IsMouseInterfacePath(@"\\?\HID#VID_38EE&PID_0022&MI_00#{guid}"));
+        Assert.False(AkkoHuaxiMouse.IsMouseInterfacePath(@"\\?\hid#vid_38ee&pid_0022&mi_02&col03#{guid}"));
+        Assert.False(AkkoHuaxiMouse.IsMouseInterfacePath(null));
+    }
+
+    [Fact]
+    public void Device_type_and_mouse_connection_follow_the_official_bytes()
+    {
+        Assert.True(AkkoHuaxiMouse.TryParseDeviceType(new byte[] { 196, 0, 0, 1 }, out var dongle));
+        Assert.Equal(HuaxiDeviceType.Dongle, dongle);
+        Assert.True(AkkoHuaxiMouse.TryParseDeviceType(new byte[] { 7, 196, 0, 0, 2 }, out var mouse));
+        Assert.Equal(HuaxiDeviceType.Mouse, mouse);
+
+        Assert.True(AkkoHuaxiMouse.TryParseMouseConnected(new byte[] { 208, 0, 0, 0 }, out var off));
+        Assert.False(off);
+        Assert.True(AkkoHuaxiMouse.TryParseMouseConnected(new byte[] { 4, 208, 0, 0, 1 }, out var on));
+        Assert.True(on);
+    }
+
+    [Fact]
     public void Pid_0022_is_not_named_tan8_ultra_by_the_aggregator()
     {
         var devices = DeviceAggregator.Combine(
