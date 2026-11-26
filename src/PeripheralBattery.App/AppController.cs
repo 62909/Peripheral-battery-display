@@ -28,6 +28,7 @@ public sealed class AppController : IDisposable
 
     private UserSettings _settings;
     private IReadOnlyList<PeripheralDevice> _devices = [];
+    private string? _hidNote;
     private string? _error;
     private bool _hasRefreshed;
     private DateTime? _refreshedAt;
@@ -168,12 +169,14 @@ public sealed class AppController : IDisposable
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
             timeout.CancelAfter(TimeSpan.FromSeconds(25));
             var collected = await CollectAsync(timeout.Token);
+            var hidNote = collected.Sightings is null ? null : HidSightingText.Format(collected.Sightings);
             await _dispatcher.InvokeAsync(() =>
             {
                 if (_disposed)
                     return;
                 _overrides.Reload();
                 _devices = DeviceAggregator.Combine(collected.Readings, _overrides);
+                _hidNote = hidNote;
                 _error = collected.Errors.Count == 0 ? null : string.Join("；", collected.Errors);
                 _hasRefreshed = true;
                 _refreshedAt = DateTime.Now;
@@ -199,18 +202,19 @@ public sealed class AppController : IDisposable
         }
     }
 
-    private async Task<(List<RawDeviceReading> Readings, List<string> Errors)> CollectAsync(CancellationToken token)
+    private async Task<(List<RawDeviceReading> Readings, List<string> Errors, IReadOnlyList<HidInterfaceSighting>? Sightings)> CollectAsync(CancellationToken token)
     {
         if (Demo)
-            return (DemoCatalog.Readings().ToList(), []);
+            return (DemoCatalog.Readings().ToList(), [], null);
 
         var readings = new List<RawDeviceReading>();
         var errors = new List<string>();
+        var hid = new HidBatterySource();
         var jobs = new List<(IPeripheralSource Source, string Error)>
         {
             (new GattBatterySource(), UiText.GattFailed),
             (new WindowsPropertyBatterySource(), UiText.PropertyFailed),
-            (new HidBatterySource(), UiText.HidFailed),
+            (hid, UiText.HidFailed),
         };
         foreach (var vendor in VendorSourceRegistry.Create())
             jobs.Add((vendor, UiText.VendorFailed));
@@ -233,7 +237,7 @@ public sealed class AppController : IDisposable
             }
         }
 
-        return (readings, errors);
+        return (readings, errors, hid.ScanCompleted ? hid.Sightings : null);
     }
 
     private void UpdatePresentation()
@@ -244,7 +248,7 @@ public sealed class AppController : IDisposable
         EnsureWidget();
         _widget.SetReading(lowest, _devices.Count, _placing, SystemTheme.TaskbarIsLight(), Demo);
         if (_list.IsVisible)
-            _list.SetState(_devices, _hasRefreshed, _error, Demo, _refreshedAt, SystemTheme.AppsAreLight());
+            _list.SetState(_devices, _hasRefreshed, _error, Demo, _refreshedAt, SystemTheme.AppsAreLight(), _hidNote);
     }
 
     private void OpenListAtCursor()
@@ -256,7 +260,7 @@ public sealed class AppController : IDisposable
 
     private void PresentList(int physicalX, int physicalY, int dpi, TaskbarSnapshot? anchor, int anchorWidth, int anchorHeight)
     {
-        _list.SetState(_devices, _hasRefreshed, _error, Demo, _refreshedAt, SystemTheme.AppsAreLight());
+        _list.SetState(_devices, _hasRefreshed, _error, Demo, _refreshedAt, SystemTheme.AppsAreLight(), _hidNote);
         _list.Measure(new Size(336, 900));
         var widthDip = _list.DesiredSize.Width > 1 ? _list.DesiredSize.Width : 336;
         var heightDip = _list.DesiredSize.Height > 1 ? _list.DesiredSize.Height : 180;

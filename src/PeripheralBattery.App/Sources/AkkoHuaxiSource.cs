@@ -1,21 +1,19 @@
 using System.Runtime.InteropServices;
+using System.Text;
 using PeripheralBattery.Core;
 using PeripheralBattery.Native;
 
 namespace PeripheralBattery.Sources;
 
 /// <summary>
-/// 空影 TAN8 Ultra on the shared 38EE:0023 / 38EE:0024 interfaces.
-/// Opens only that vendor collection. Identity is the driver's read-only
-/// 0x01 / 0x30 / 0x02 wrap. 0x1A is sent only after cid 2.
-/// A candidate that cannot be confirmed is still listed, with a note and no percentage.
+/// 38EE:0022 on the Huaxi collection FFA8:0002 (USB MI_02).
+/// The mouse interface MI_00 is not queried.
 /// </summary>
-internal sealed class AkkoTan8UltraSource : IVendorBatterySource
+internal sealed class AkkoHuaxiSource : IVendorBatterySource
 {
-    private const int Attempts = 3;
-    private const int TimeoutMs = 2000;
+    private const int TimeoutMs = 3000;
 
-    public string SourceId => "akko-tan8-ultra";
+    public string SourceId => "akko-huaxi";
     public int Priority => SourcePriority.Vendor;
 
     public Task<IReadOnlyList<RawDeviceReading>> ReadAsync(CancellationToken cancellationToken)
@@ -26,7 +24,6 @@ internal sealed class AkkoTan8UltraSource : IVendorBatterySource
     private static List<RawDeviceReading> Read(CancellationToken cancellationToken)
     {
         var readings = new List<RawDeviceReading>();
-        var best = new Dictionary<(int Vid, int Pid), Tan8Decision>();
         NativeMethods.HidD_GetHidGuid(out var guid);
         var set = NativeMethods.SetupDiGetClassDevs(ref guid, null, IntPtr.Zero, NativeMethods.DigcfPresent | NativeMethods.DigcfDeviceInterface);
         if (set == IntPtr.Zero || set == NativeMethods.InvalidHandle)
@@ -45,24 +42,17 @@ internal sealed class AkkoTan8UltraSource : IVendorBatterySource
                 if (path is null)
                     continue;
                 var ids = DeviceIdentity.ParseVidPid(path);
-                if (ids.VendorId is not int pathVid || ids.ProductId is not int pathPid || !AkkoTan8Ultra.IsCandidate(pathVid, pathPid))
+                if (ids.VendorId is not int vid || ids.ProductId is not int pid || !AkkoHuaxiMouse.IsCandidate(vid, pid))
                     continue;
-                Tan8Decision decision;
                 try
                 {
-                    decision = Probe(path, pathVid, pathPid, cancellationToken);
+                    if (Probe(path, cancellationToken) is RawDeviceReading reading)
+                        readings.Add(reading);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     System.Diagnostics.Debug.WriteLine(ex);
-                    decision = AkkoTan8Ultra.Decide(pathVid, pathPid, Tan8ProbeFailure.SendFailed, default, false, default, false);
                 }
-
-                if (decision.Outcome == Tan8Outcome.None)
-                    continue;
-                var key = (pathVid, pathPid);
-                if (!best.TryGetValue(key, out var existing) || decision.Outcome > existing.Outcome)
-                    best[key] = decision;
             }
         }
         finally
@@ -70,91 +60,53 @@ internal sealed class AkkoTan8UltraSource : IVendorBatterySource
             NativeMethods.SetupDiDestroyDeviceInfoList(set);
         }
 
-        foreach (var ((vid, pid), decision) in best)
-        {
-            readings.Add(new RawDeviceReading
-            {
-                SourceId = "akko-tan8-ultra",
-                Priority = SourcePriority.Vendor,
-                InstanceId = "akko-tan8:" + vid.ToString("X4") + ":" + pid.ToString("X4"),
-                WindowsName = decision.DisplayName,
-                VendorId = vid,
-                ProductId = pid,
-                KindHint = DeviceKind.Mouse,
-                BatteryPercent = decision.BatteryPercent,
-                Note = decision.Note,
-            });
-        }
-
         return readings;
     }
 
-    private static Tan8Decision Probe(string path, int pathVid, int pathPid, CancellationToken cancellationToken)
+    private static RawDeviceReading? Probe(string path, CancellationToken cancellationToken)
     {
         var handle = Open(path, overlapped: true);
         if (handle == IntPtr.Zero || handle == NativeMethods.InvalidHandle)
-        {
-            var error = Marshal.GetLastWin32Error();
-            var failure = error is NativeMethods.ErrorAccessDenied or NativeMethods.ErrorSharingViolation
-                ? Tan8ProbeFailure.InterfaceBusy
-                : Tan8ProbeFailure.SendFailed;
-            return AkkoTan8Ultra.Decide(pathVid, pathPid, failure, default, false, default, false);
-        }
+            return null;
 
         var plain = IntPtr.Zero;
         var ioEvent = NativeMethods.CreateEvent(IntPtr.Zero, false, false, null);
         if (ioEvent == IntPtr.Zero || ioEvent == NativeMethods.InvalidHandle)
         {
             NativeMethods.CloseHandle(handle);
-            return AkkoTan8Ultra.Decide(pathVid, pathPid, Tan8ProbeFailure.SendFailed, default, false, default, false);
+            return null;
         }
 
         try
         {
             var attributes = new HidAttributes { Size = Marshal.SizeOf<HidAttributes>() };
             if (!NativeMethods.HidD_GetAttributes(handle, ref attributes)
-                || attributes.VendorId != pathVid
-                || attributes.ProductId != pathPid
-                || !AkkoTan8Ultra.IsCandidate(attributes.VendorId, attributes.ProductId))
-                return default;
+                || !AkkoHuaxiMouse.IsCandidate(attributes.VendorId, attributes.ProductId))
+                return null;
 
             if (!NativeMethods.HidD_GetPreparsedData(handle, out var preparsed) || preparsed == IntPtr.Zero)
-                return AkkoTan8Ultra.Decide(pathVid, pathPid, Tan8ProbeFailure.SendFailed, default, false, default, false);
+                return null;
 
             try
             {
                 var caps = new HidCaps();
                 if (NativeMethods.HidP_GetCaps(preparsed, ref caps) != NativeMethods.HidPStatusSuccess)
-                    return AkkoTan8Ultra.Decide(pathVid, pathPid, Tan8ProbeFailure.SendFailed, default, false, default, false);
-                if (!AkkoTan8Ultra.IsVendorCollection(caps.UsagePage, caps.Usage))
-                    return AkkoTan8Ultra.Decide(pathVid, pathPid, Tan8ProbeFailure.NotVendorCollection, default, false, default, false);
+                    return null;
+                if (!AkkoHuaxiMouse.IsInfoCollection(caps.UsagePage, caps.Usage))
+                    return null;
 
+                var name = ReadProduct(handle);
                 NativeMethods.HidD_FlushQueue(handle);
-                if (cancellationToken.IsCancellationRequested)
-                    return AkkoTan8Ultra.Decide(pathVid, pathPid, Tan8ProbeFailure.NoReply, default, false, default, false);
+                var request = AkkoHuaxiMouse.InfoRequest();
+                if (!Send(handle, ref plain, path, ioEvent, caps, request, cancellationToken))
+                    return Reading(name, null, AkkoHuaxiMouse.NoteSendFailed);
 
-                // The wrapper's start ack is optional. A sleeping 2.4G radio may miss it and still answer 0x30.
-                Transact(handle, ref plain, path, ioEvent, caps, AkkoTan8Ultra.StartPayload(), AkkoTan8Ultra.StartCommand, AkkoTan8Ultra.MinimumWrappedResponse, 1, 1000, cancellationToken);
-                var identity = Transact(handle, ref plain, path, ioEvent, caps, AkkoTan8Ultra.IdentityPayload(), AkkoTan8Ultra.IdentityCommand, AkkoTan8Ultra.MinimumIdentityResponse, Attempts, TimeoutMs, cancellationToken);
-                if (identity.Payload is null || !AkkoTan8Ultra.TryReadCid(identity.Payload, out var cid))
-                {
-                    var failure = identity.Sent ? Tan8ProbeFailure.NoReply : Tan8ProbeFailure.SendFailed;
-                    return AkkoTan8Ultra.Decide(attributes.VendorId, attributes.ProductId, failure, default, false, default, false);
-                }
-
-                Transact(handle, ref plain, path, ioEvent, caps, AkkoTan8Ultra.EndPayload(), AkkoTan8Ultra.EndCommand, AkkoTan8Ultra.MinimumWrappedResponse, 1, 500, cancellationToken);
-                if (cid != AkkoTan8Ultra.ModelCid)
-                    return AkkoTan8Ultra.Decide(attributes.VendorId, attributes.ProductId, Tan8ProbeFailure.None, identity.Payload, true, default, false);
-
-                var battery = Transact(handle, ref plain, path, ioEvent, caps, AkkoTan8Ultra.BatteryPayload(), AkkoTan8Ultra.BatteryCommand, AkkoTan8Ultra.MinimumBatteryResponse, Attempts, TimeoutMs, cancellationToken);
-                return AkkoTan8Ultra.Decide(
-                    attributes.VendorId,
-                    attributes.ProductId,
-                    Tan8ProbeFailure.None,
-                    identity.Payload,
-                    true,
-                    battery.Payload ?? [],
-                    battery.Payload is not null);
+                var info = ReadInfo(handle, ref plain, path, ioEvent, caps, cancellationToken);
+                if (info is null)
+                    return Reading(name, null, AkkoHuaxiMouse.NoteNoInfoReply);
+                if (info.Value.BatteryPercent is null)
+                    return Reading(name, null, AkkoHuaxiMouse.NoteLevelOutOfRange);
+                return Reading(name, info.Value.BatteryPercent, null);
             }
             finally
             {
@@ -170,36 +122,18 @@ internal sealed class AkkoTan8UltraSource : IVendorBatterySource
         }
     }
 
-    private readonly record struct Exchange(bool Sent, byte[]? Payload);
-
-    private static Exchange Transact(
-        IntPtr handle,
-        ref IntPtr plain,
-        string path,
-        IntPtr ioEvent,
-        HidCaps caps,
-        byte[] payload,
-        byte command,
-        int minimumPayload,
-        int attempts,
-        int timeoutMs,
-        CancellationToken cancellationToken)
+    private static RawDeviceReading Reading(string? name, int? percent, string? note) => new()
     {
-        var sent = false;
-        for (var attempt = 0; attempt < attempts; attempt++)
-        {
-            if (cancellationToken.IsCancellationRequested)
-                break;
-            if (!Send(handle, ref plain, path, ioEvent, caps, payload, cancellationToken))
-                continue;
-            sent = true;
-            var reply = ReadReply(handle, ref plain, path, ioEvent, caps, command, minimumPayload, timeoutMs, cancellationToken);
-            if (reply is not null)
-                return new Exchange(true, reply);
-        }
-
-        return new Exchange(sent, null);
-    }
+        SourceId = "akko-huaxi",
+        Priority = SourcePriority.Vendor,
+        InstanceId = "huaxi:" + AkkoHuaxiMouse.VendorId.ToString("X4") + ":" + AkkoHuaxiMouse.ProductId.ToString("X4"),
+        WindowsName = name,
+        VendorId = AkkoHuaxiMouse.VendorId,
+        ProductId = AkkoHuaxiMouse.ProductId,
+        KindHint = DeviceKind.Mouse,
+        BatteryPercent = percent,
+        Note = note,
+    };
 
     private static bool Send(
         IntPtr handle,
@@ -210,38 +144,30 @@ internal sealed class AkkoTan8UltraSource : IVendorBatterySource
         byte[] payload,
         CancellationToken cancellationToken)
     {
-        if (caps.OutputReportByteLength >= 1 + AkkoTan8Ultra.PayloadLength)
-        {
-            var output = new byte[caps.OutputReportByteLength];
-            output[0] = AkkoTan8Ultra.ReportId;
-            Buffer.BlockCopy(payload, 0, output, 1, payload.Length);
-            if (WriteFile(handle, ioEvent, output, cancellationToken))
-                return true;
-        }
+        var length = Math.Max((int)caps.OutputReportByteLength, 1 + payload.Length);
+        var output = new byte[length];
+        output[0] = AkkoHuaxiMouse.ReportId;
+        Buffer.BlockCopy(payload, 0, output, 1, payload.Length);
+        if (caps.OutputReportByteLength >= output.Length && WriteFile(handle, ioEvent, output, cancellationToken))
+            return true;
 
-        var control = new byte[1 + AkkoTan8Ultra.PayloadLength];
-        control[0] = AkkoTan8Ultra.ReportId;
-        Buffer.BlockCopy(payload, 0, control, 1, payload.Length);
         plain = EnsurePlain(plain, path);
         return plain != IntPtr.Zero
             && plain != NativeMethods.InvalidHandle
-            && NativeMethods.HidD_SetOutputReport(plain, control, control.Length);
+            && NativeMethods.HidD_SetOutputReport(plain, output, output.Length);
     }
 
-    private static byte[]? ReadReply(
+    private static HuaxiInfo? ReadInfo(
         IntPtr handle,
         ref IntPtr plain,
         string path,
         IntPtr ioEvent,
         HidCaps caps,
-        byte command,
-        int minimumPayload,
-        int timeoutMs,
         CancellationToken cancellationToken)
     {
-        var inputLength = caps.InputReportByteLength > 0 ? caps.InputReportByteLength : 1 + AkkoTan8Ultra.PayloadLength;
+        var inputLength = Math.Max((int)caps.InputReportByteLength, 1 + AkkoHuaxiMouse.HeaderLength + AkkoHuaxiMouse.LevelOffset + 1);
         var input = new byte[inputLength];
-        var deadline = Environment.TickCount64 + timeoutMs;
+        var deadline = Environment.TickCount64 + TimeoutMs;
         while (Environment.TickCount64 < deadline)
         {
             if (cancellationToken.IsCancellationRequested)
@@ -249,30 +175,18 @@ internal sealed class AkkoTan8UltraSource : IVendorBatterySource
             var remaining = (int)Math.Max(1, Math.Min(int.MaxValue, deadline - Environment.TickCount64));
             if (!ReadFile(handle, ioEvent, input, remaining, out var read, cancellationToken))
                 break;
-            if (Match(input.AsSpan(0, read), command, minimumPayload, out var payload))
-                return payload;
+            if (AkkoHuaxiMouse.TryParseInfoReport(input.AsSpan(0, read), out var info))
+                return info;
         }
 
         plain = EnsurePlain(plain, path);
         if (plain == IntPtr.Zero || plain == NativeMethods.InvalidHandle)
             return null;
-        var controlLength = Math.Max(inputLength, 1 + AkkoTan8Ultra.PayloadLength);
-        var control = new byte[controlLength];
-        control[0] = AkkoTan8Ultra.ReportId;
+        var control = new byte[inputLength];
+        control[0] = AkkoHuaxiMouse.ReportId;
         if (!NativeMethods.HidD_GetInputReport(plain, control, control.Length))
             return null;
-        return Match(control, command, minimumPayload, out var fromControl) ? fromControl : null;
-    }
-
-    private static bool Match(ReadOnlySpan<byte> report, byte command, int minimumPayload, out byte[]? payload)
-    {
-        payload = null;
-        if (!AkkoTan8Ultra.TryGetPayload(report, out var body))
-            return false;
-        if (!AkkoTan8Ultra.Matches(body, command, minimumPayload))
-            return false;
-        payload = body.ToArray();
-        return true;
+        return AkkoHuaxiMouse.TryParseInfoReport(control, out var fromControl) ? fromControl : null;
     }
 
     private static bool WriteFile(IntPtr handle, IntPtr ioEvent, byte[] buffer, CancellationToken cancellationToken)
@@ -391,5 +305,18 @@ internal sealed class AkkoTan8UltraSource : IVendorBatterySource
         {
             Marshal.FreeHGlobal(buffer);
         }
+    }
+
+    private static string? ReadProduct(IntPtr handle)
+    {
+        var bytes = new byte[512];
+        if (!NativeMethods.HidD_GetProductString(handle, bytes, bytes.Length))
+            return null;
+        var text = Encoding.Unicode.GetString(bytes);
+        var end = text.IndexOf('\0');
+        if (end >= 0)
+            text = text[..end];
+        text = text.Trim();
+        return DeviceIdentity.IsMeaningfulName(text) ? text : null;
     }
 }

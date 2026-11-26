@@ -69,7 +69,7 @@ public interface IPeripheralSource
 }
 
 /// <summary>
-/// Marker for a vendor protocol reader such as the 空影 TAN8 Ultra source.
+/// Marker for a vendor protocol reader such as the Huaxi 38EE:0022 source.
 /// Register an implementation from the app.
 /// A reader must return null battery when its protocol does not provide one.
 /// </summary>
