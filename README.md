@@ -4,7 +4,7 @@
 
 不需要安装 .NET 8 SDK，也不需要安装 .NET 运行时。
 
-1. 打开 [v0.3.2 Release](https://github.com/62909/Peripheral-battery-display/releases/tag/v0.3.2)，下载 [PeripheralBattery.exe](https://github.com/62909/Peripheral-battery-display/releases/download/v0.3.2/PeripheralBattery.exe)。
+1. 打开 [v0.4.0 Release](https://github.com/62909/Peripheral-battery-display/releases/tag/v0.4.0)，下载 [PeripheralBattery.exe](https://github.com/62909/Peripheral-battery-display/releases/download/v0.4.0/PeripheralBattery.exe)。
 2. 这一版是单个文件，不用解压。如果下载到的是 zip，先解压再运行里面的程序。
 3. 双击运行 `PeripheralBattery.exe`。
 
@@ -102,7 +102,7 @@ dotnet run --project src/PeripheralBattery.App -- --demo
 
 演示数据里有电量 72%、18%、55%，也有名称未知和电量未知。图标应显示 **18**。任务栏电量块这时是鼠标轮廓、填了一点的电池，和文字「18%」。`--demo` 只影响这一次运行；从菜单切换会写入设置。
 
-程序版本是 **0.3.2**。安装包是 [PeripheralBattery.exe](https://github.com/62909/Peripheral-battery-display/releases/download/v0.3.2/PeripheralBattery.exe)，源码仓库里不附带 exe。
+程序版本是 **0.4.0**。安装包是 [PeripheralBattery.exe](https://github.com/62909/Peripheral-battery-display/releases/download/v0.4.0/PeripheralBattery.exe)，源码仓库里不附带 exe。
 
 ## 环境、构建、运行
 
