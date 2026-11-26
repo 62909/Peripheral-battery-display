@@ -69,8 +69,10 @@ public static class HidSightingText
         }
 
         var line = string.Join(" · ", parts);
-        var sawVendorCollection = group.Usages.Any(item => AkkoTan8Ultra.IsVendorCollection(item.Page, item.Usage));
-        if (vid == AkkoTan8Ultra.VendorId && !sawVendorCollection)
+        var sawTan8Collection = group.Usages.Any(item => AkkoTan8Ultra.IsVendorCollection(item.Page, item.Usage));
+        var sawHuaxiCollection = pid == AkkoHuaxiMouse.ProductId
+            && group.Usages.Any(item => AkkoHuaxiMouse.IsInfoCollection(item.Page, item.Usage));
+        if (vid == AkkoTan8Ultra.VendorId && !sawTan8Collection && !sawHuaxiCollection)
         {
             var collection = AkkoTan8Ultra.UsagePage.ToString("X4") + ":" + AkkoTan8Ultra.Usage.ToString("X4");
             line += "（不是厂商集合 " + collection + "，没有查询电量）";
