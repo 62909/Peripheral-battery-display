@@ -34,6 +34,12 @@ public sealed record RawDeviceReading
     public int? BatteryPercent { get; init; }
 
     /// <summary>
+    /// Charging flag from the same report as <see cref="BatteryPercent"/>, when that report has one.
+    /// Null means the source did not provide a flag. It is never inferred.
+    /// </summary>
+    public bool? Charging { get; init; }
+
+    /// <summary>
     /// Optional list note. Never a battery percentage.
     /// </summary>
     public string? Note { get; init; }
@@ -44,7 +50,8 @@ public sealed record PeripheralDevice(
     string? DisplayName,
     DeviceKind Kind,
     int? BatteryPercent,
-    string? Note = null);
+    string? Note = null,
+    bool? Charging = null);
 
 /// <summary>
 /// Manual name or type correction. Battery is intentionally absent:

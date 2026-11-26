@@ -111,7 +111,7 @@ internal sealed class AkkoHuaxiSource : IVendorBatterySource
                     cancellationToken);
                 return result.Status switch
                 {
-                    AkkoHuaxiExchangeStatus.Ok => Reading(name, result.Info.BatteryPercent, null),
+                    AkkoHuaxiExchangeStatus.Ok => Reading(name, result.Info.BatteryPercent, null, result.Info.Charging),
                     AkkoHuaxiExchangeStatus.LevelOutOfRange => Reading(name, null, AkkoHuaxiMouse.NoteLevelOutOfRange),
                     AkkoHuaxiExchangeStatus.SendFailed => Reading(name, null, AkkoHuaxiMouse.NoteSendFailed),
                     AkkoHuaxiExchangeStatus.MouseNotConnected => Reading(name, null, AkkoHuaxiMouse.NoteMouseNotConnected),
@@ -129,7 +129,7 @@ internal sealed class AkkoHuaxiSource : IVendorBatterySource
         }
     }
 
-    private static RawDeviceReading Reading(string? name, int? percent, string? note) => new()
+    private static RawDeviceReading Reading(string? name, int? percent, string? note, bool? charging = null) => new()
     {
         SourceId = "akko-huaxi",
         Priority = SourcePriority.Vendor,
@@ -139,6 +139,7 @@ internal sealed class AkkoHuaxiSource : IVendorBatterySource
         ProductId = AkkoHuaxiMouse.ProductId,
         KindHint = DeviceKind.Mouse,
         BatteryPercent = percent,
+        Charging = charging,
         Note = note,
     };
 

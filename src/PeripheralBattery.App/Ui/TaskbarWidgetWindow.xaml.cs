@@ -15,6 +15,8 @@ public partial class TaskbarWidgetWindow : Window
     public TaskbarWidgetWindow()
     {
         InitializeComponent();
+        Width = TaskbarPlacement.PillAlongDip;
+        Height = TaskbarPlacement.PillCrossDip;
         FontFamily = new FontFamily("Microsoft YaHei UI, Segoe UI");
         WindowChrome.Apply(this, noActivate: true);
         MouseLeftButtonDown += OnLeftDown;
@@ -29,26 +31,35 @@ public partial class TaskbarWidgetWindow : Window
 
     public void Attach(AppController controller) => _controller = controller;
 
-    public void SetReading(int? percent, int count, bool placing, bool lightTaskbar, bool demo)
+    public void SetReading(PillFace face, int count, bool placing, bool lightTaskbar, bool demo)
     {
         _placing = placing;
         var palette = new Palette(lightTaskbar);
-        var tone = BatteryMath.Tone(percent);
-        var toneBrush = palette.Tone(tone);
-        Shell.Background = palette.Brush(palette.Background);
+        var toneBrush = palette.Tone(BatteryMath.Tone(face.Percent));
+        var background = palette.Brush(palette.Background);
+        Shell.Background = background;
         Shell.BorderBrush = placing ? palette.Brush(palette.Accent) : palette.Brush(palette.Line);
         Shell.BorderThickness = new Thickness(placing ? 2 : 1);
+        DeviceGlyph.Draw(DeviceIcon, face.Silhouette, toneBrush);
         ValueText.Foreground = toneBrush;
-        ValueText.Text = percent is int value ? $"{value}%" : UiText.Unknown;
+        ValueText.Text = face.PercentText;
         Body.Stroke = toneBrush;
         Cap.Fill = toneBrush;
-        Fill.Fill = percent is null ? Brushes.Transparent : toneBrush;
-        Fill.Width = percent is int level ? Math.Max(0, 9.0 * level / 100.0) : 0;
+        Fill.Fill = face.Percent is null ? Brushes.Transparent : toneBrush;
+        Fill.Width = BatteryInteriorWidth * face.FillFraction;
+        Bolt.Visibility = face.Charging ? Visibility.Visible : Visibility.Collapsed;
+        Bolt.Fill = background;
+        Bolt.Stroke = toneBrush;
         Cursor = placing ? Cursors.SizeAll : Cursors.Hand;
         ToolTip = placing
             ? UiText.PlaceHint
-            : UiText.TrayTip(percent, count, demo);
+            : UiText.TrayTip(face.Percent, count, demo);
     }
+
+    /// <summary>
+    /// Inner width of the battery body. 100% fills it; an unknown level stays empty.
+    /// </summary>
+    private const double BatteryInteriorWidth = 11.6;
 
     private void OnLeftDown(object sender, MouseButtonEventArgs e)
     {
