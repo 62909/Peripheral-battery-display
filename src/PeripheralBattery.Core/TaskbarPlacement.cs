@@ -35,31 +35,60 @@ public static class TaskbarPlacement
     public const string PrimaryMonitor = "primary";
 
     /// <summary>
-    /// Room for the taskbar pill in DIPs: device silhouette, battery silhouette,
-    /// and the percentage text (or 未知). The cross axis stays one taskbar row.
+    /// Cross-axis room for the pill, in DIPs. One taskbar row.
+    /// The along-axis length comes from <see cref="PillComposition.Arrange"/>.
     /// </summary>
-    public const int PillAlongDip = 112;
     public const int PillCrossDip = 32;
 
-    public static WidgetSize Fit(TaskbarBounds bar, int dpi)
+    /// <summary>
+    /// Fits the pill on the bar. <paramref name="alongDip"/> is the strip width
+    /// from <see cref="PillComposition.Arrange"/>. When that strip is longer than
+    /// the bar, the widget stays inside the bar and <see cref="ContentScale"/>
+    /// drops below 1 so every device remains visible.
+    /// </summary>
+    public static WidgetSize Fit(TaskbarBounds bar, int dpi, double alongDip) =>
+        Measure(bar, dpi, alongDip).Size;
+
+    /// <summary>
+    /// The empty pill: one generic 「未知」slot. Callers that know the device
+    /// list pass that strip's width instead.
+    /// </summary>
+    public static WidgetSize Fit(TaskbarBounds bar, int dpi) =>
+        Fit(bar, dpi, PillComposition.Arrange([]).WidthDip);
+
+    /// <summary>
+    /// 1 when the strip fits on the bar. Below 1 the view scales the whole strip
+    /// down so it stays on the bar without hiding a device or scrolling.
+    /// </summary>
+    public static double ContentScale(TaskbarBounds bar, int dpi, double alongDip) =>
+        Measure(bar, dpi, alongDip).Scale;
+
+    private readonly record struct MeasuredFit(WidgetSize Size, double Scale);
+
+    private static MeasuredFit Measure(TaskbarBounds bar, int dpi, double alongDip)
     {
         if (dpi <= 0)
             dpi = 96;
+        if (alongDip <= 0 || !double.IsFinite(alongDip))
+            alongDip = PillComposition.Arrange([]).WidthDip;
         var scale = dpi / 96.0;
         var margin = Math.Max(2, (int)Math.Round(4 * scale));
         var horizontal = bar.Edge is TaskbarEdge.Top or TaskbarEdge.Bottom;
         var cross = Math.Max(0, horizontal ? bar.Height : bar.Width);
         var along = Math.Max(0, horizontal ? bar.Width : bar.Height);
-        var preferredAlong = Math.Max(1, (int)Math.Round(PillAlongDip * scale));
+        // Ceiling keeps the window at least as wide as the DIP strip after DPI rounding.
+        var preferredAlong = Math.Max(1, (int)Math.Ceiling(alongDip * scale - 1e-9));
         var preferredCross = Math.Max(1, (int)Math.Round(PillCrossDip * scale));
         var crossSize = cross <= margin * 2
             ? Math.Max(1, cross - (cross > 2 ? 2 : 0))
             : Math.Min(preferredCross, Math.Max(1, cross - margin * 2));
         var alongRoom = along > margin * 2 ? along - margin * 2 : Math.Max(1, along);
         var alongSize = Math.Max(1, Math.Min(preferredAlong, alongRoom));
-        return horizontal
+        var contentScale = alongSize >= preferredAlong ? 1d : alongSize / (double)preferredAlong;
+        var size = horizontal
             ? new WidgetSize(alongSize, crossSize)
             : new WidgetSize(crossSize, alongSize);
+        return new MeasuredFit(size, contentScale);
     }
 
     public static (int X, int Y) Place(TaskbarBounds bar, WidgetSize widget, double fraction)

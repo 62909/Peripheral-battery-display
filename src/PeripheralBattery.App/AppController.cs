@@ -32,7 +32,7 @@ public sealed class AppController : IDisposable
     private bool _hasRefreshed;
     private DateTime? _refreshedAt;
     private bool _placing;
-    private int _widgetWidth = TaskbarPlacement.PillAlongDip;
+    private int _widgetWidth = (int)PillComposition.Arrange([]).WidthDip;
     private int _widgetHeight = TaskbarPlacement.PillCrossDip;
     private int _placedX = int.MinValue;
     private int _placedY;
@@ -129,7 +129,7 @@ public sealed class AppController : IDisposable
             ?? ResolveAnchor();
         if (hit is null)
             return;
-        var size = TaskbarPlacement.Fit(hit.Bounds, hit.Dpi);
+        var size = WidgetSizeFor(hit);
         _settings.AnchorFraction = TaskbarPlacement.FractionFromPointer(
             hit.Bounds, size, point.X, point.Y, _settings.AnchorFraction);
         _settings.AnchorMonitor = hit.IsPrimary ? TaskbarPlacement.PrimaryMonitor : hit.MonitorDeviceName;
@@ -243,7 +243,10 @@ public sealed class AppController : IDisposable
         var icon = IconPainter.Create(BatteryMath.TrayGlyph(lowest), BatteryMath.Tone(lowest));
         _tray.Update(icon, UiText.TrayTip(lowest, _devices.Count, Demo));
         EnsureWidget();
-        PaintWidget();
+        if (_settings.TaskbarWidgetEnabled)
+            FollowTaskbar();
+        else
+            PaintWidget();
         if (_list.IsVisible)
             _list.SetState(_devices, _hasRefreshed, _error, Demo, _refreshedAt, SystemTheme.AppsAreLight());
     }
@@ -310,11 +313,25 @@ public sealed class AppController : IDisposable
             return;
         }
 
-        MoveWidget(bar, TaskbarPlacement.Fit(bar.Bounds, bar.Dpi));
+        MoveWidget(bar, WidgetSizeFor(bar));
     }
 
-    private void PaintWidget() =>
-        _widget.SetReading(PillComposition.Select(_devices), _devices.Count, _placing, SystemTheme.TaskbarIsLight(), Demo);
+    private PillStrip CurrentStrip() =>
+        PillComposition.Arrange(_devices, _placing ? 2 : 1);
+
+    private WidgetSize WidgetSizeFor(TaskbarSnapshot bar) =>
+        TaskbarPlacement.Fit(bar.Bounds, bar.Dpi, CurrentStrip().WidthDip);
+
+    private void PaintWidget(TaskbarSnapshot? bar = null)
+    {
+        bar ??= ResolveAnchor();
+        var strip = CurrentStrip();
+        var scale = bar is null
+            ? 1
+            : TaskbarPlacement.ContentScale(bar.Bounds, bar.Dpi, strip.WidthDip);
+        var edge = bar?.Bounds.Edge ?? TaskbarEdge.Bottom;
+        _widget.SetReading(strip, _devices.Count, _placing, SystemTheme.TaskbarIsLight(), Demo, edge, scale);
+    }
 
     private void MoveWidget(TaskbarSnapshot bar, WidgetSize size)
     {
@@ -330,7 +347,7 @@ public sealed class AppController : IDisposable
         var ownedByTray = tray != IntPtr.Zero && owner == tray.ToInt64();
         var covered = wasShown && !ownedByTray && hwnd != IntPtr.Zero && tray != IntPtr.Zero && !IsAbove(hwnd, tray);
         var raise = TaskbarPlacement.NeedsRaise(applied, desired, covered) || _placing != _placedMode;
-        PaintWidget();
+        PaintWidget(bar);
         if (!raise)
             return;
 
