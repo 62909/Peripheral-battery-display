@@ -87,6 +87,15 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
 
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hwnd, IntPtr processId);
+
+    [DllImport("user32.dll")]
+    public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int GetClassName(IntPtr hwnd, StringBuilder className, int maxCount);
 
@@ -230,6 +239,40 @@ internal static class NativeMethods
 
     [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)]
     public static extern int CM_Get_DevNode_Property(int devInst, ref DEVPROPKEY key, out int propertyType, byte[]? buffer, ref int bufferSize, int flags);
+
+    /// <summary>
+    /// Make <paramref name="hwnd"/> the foreground window. A tray click is
+    /// delivered by Explorer, which is still foreground, and
+    /// <see cref="SetForegroundWindow"/> then fails unless this thread is
+    /// briefly attached to Explorer's input. The attachment is undone before
+    /// returning so the two queues do not stay joined.
+    /// </summary>
+    public static void MakeForeground(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+            return;
+
+        var foreground = GetForegroundWindow();
+        var attached = false;
+        var foreThread = 0u;
+        var current = GetCurrentThreadId();
+        if (foreground != IntPtr.Zero && foreground != hwnd)
+        {
+            foreThread = GetWindowThreadProcessId(foreground, IntPtr.Zero);
+            if (foreThread != 0 && foreThread != current)
+                attached = AttachThreadInput(foreThread, current, true);
+        }
+
+        try
+        {
+            SetForegroundWindow(hwnd);
+        }
+        finally
+        {
+            if (attached)
+                AttachThreadInput(foreThread, current, false);
+        }
+    }
 
     public static APPBARDATA NewAppBar(IntPtr hwnd)
     {
