@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
+using PeripheralBattery.Core;
 
 namespace PeripheralBattery.Native;
 
@@ -99,11 +100,23 @@ internal sealed class TrayIconHost : IDisposable
     {
         if (msg == (int)_callback)
         {
-            var mouse = lParam.ToInt32();
-            if (mouse is NativeMethods.WmLButtonUp or NativeMethods.WmLButtonDblClk)
-                LeftClick?.Invoke();
-            else if (mouse == NativeMethods.WmRButtonUp)
-                RightClick?.Invoke();
+            // ToInt32 throws when the high half is set. The notification is in
+            // the low word either way, so decode the full pointer value.
+            switch (TrayNotification.Decode(lParam.ToInt64()))
+            {
+                case TrayActivation.Primary:
+                    LeftClick?.Invoke();
+                    break;
+                case TrayActivation.Menu:
+                    RightClick?.Invoke();
+                    break;
+            }
+
+            handled = true;
+        }
+        else if (msg == TrayNotification.WmContextMenu)
+        {
+            RightClick?.Invoke();
             handled = true;
         }
         else if (msg == (int)_appBarMessage)

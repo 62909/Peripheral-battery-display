@@ -39,6 +39,7 @@ public sealed class AppController : IDisposable
     private int _placedW;
     private int _placedH;
     private bool _placedMode;
+    private bool _menuOpen;
     private bool _disposed;
 
     public AppController(bool sessionDemo)
@@ -100,10 +101,33 @@ public sealed class AppController : IDisposable
 
     public void ShowMenu()
     {
+        if (_menuOpen || _disposed)
+            return;
         if (!NativeMethods.GetCursorPos(out var point))
             return;
-        var dpi = DpiNear(point.X, point.Y);
-        TrayMenu.Show(_menuAnchor, point.X, point.Y, dpi, BuildMenu());
+
+        // The placed pill is owned by Shell_TrayWnd so a click on empty taskbar
+        // space cannot cover it. That cross-process owner joins this thread's
+        // input queue to Explorer, and the context menu is then dismissed
+        // before it paints. Drop the owner for the menu and put it back when
+        // the menu closes. Opening waits until this click returns, so the
+        // button-up that asked for the menu does not dismiss it.
+        _menuOpen = true;
+        try
+        {
+            ReleaseTrayOwner();
+            NativeMethods.MakeForeground(_tray.Hwnd);
+            var dpi = DpiNear(point.X, point.Y);
+            var entries = BuildMenu();
+            _dispatcher.BeginInvoke(
+                DispatcherPriority.Normal,
+                new Action(() => OpenMenu(point.X, point.Y, dpi, entries)));
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(ex);
+            EndMenu();
+        }
     }
 
     public void OpenListFromWidget()
@@ -299,9 +323,37 @@ public sealed class AppController : IDisposable
         _list.Show();
     }
 
-    private void FollowTaskbar()
+    private void OpenMenu(int physicalX, int physicalY, int dpi, List<MenuEntry> entries)
     {
         if (_disposed)
+        {
+            EndMenu();
+            return;
+        }
+
+        try
+        {
+            TrayMenu.Show(_menuAnchor, _tray.Hwnd, physicalX, physicalY, dpi, entries, EndMenu);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(ex);
+            EndMenu();
+        }
+    }
+
+    private void EndMenu()
+    {
+        if (!_menuOpen)
+            return;
+        _menuOpen = false;
+        if (!_disposed)
+            FollowTaskbar();
+    }
+
+    private void FollowTaskbar()
+    {
+        if (_disposed || _menuOpen)
             return;
         EnsureWidget();
         var bar = ResolveAnchor();
@@ -369,8 +421,10 @@ public sealed class AppController : IDisposable
         // Shell_TrayWnd is topmost. A click on empty taskbar space raises it
         // over other topmost windows and covers this overlay. Owning the popup
         // to that tray keeps the pill above the bar. SetWindowPos applies the
-        // owner change; without it the click stays covered.
-        BindTrayOwner(hwnd, tray);
+        // owner change; without it the click stays covered. Skip that while a
+        // menu is open: ShowMenu cleared the owner so the menu can stay up.
+        if (!_menuOpen)
+            BindTrayOwner(hwnd, tray);
         NativeMethods.SetWindowPos(
             hwnd,
             NativeMethods.HwndTopmost,
