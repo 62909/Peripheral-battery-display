@@ -195,17 +195,20 @@ internal static class NativeMethods
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
 
+    // Byte counts are NULL. Overlapped HID transfers report the size through
+    // GetOverlappedResult, and a non-NULL count can make WriteFile fail.
+    // The buffer and the OVERLAPPED block have to stay allocated until that call.
     [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern bool WriteFile(IntPtr file, byte[] buffer, int count, out int written, ref System.Threading.NativeOverlapped overlapped);
+    public static extern bool WriteFile(IntPtr file, IntPtr buffer, int count, IntPtr written, IntPtr overlapped);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern bool ReadFile(IntPtr file, byte[] buffer, int count, out int read, ref System.Threading.NativeOverlapped overlapped);
+    public static extern bool ReadFile(IntPtr file, IntPtr buffer, int count, IntPtr read, IntPtr overlapped);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern bool GetOverlappedResult(IntPtr file, ref System.Threading.NativeOverlapped overlapped, out int transferred, bool wait);
+    public static extern bool GetOverlappedResult(IntPtr file, IntPtr overlapped, out int transferred, bool wait);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern bool CancelIoEx(IntPtr file, ref System.Threading.NativeOverlapped overlapped);
+    public static extern bool CancelIoEx(IntPtr file, IntPtr overlapped);
 
     [DllImport("hid.dll")]
     public static extern int HidP_GetCaps(IntPtr preparsed, ref HidCaps caps);
