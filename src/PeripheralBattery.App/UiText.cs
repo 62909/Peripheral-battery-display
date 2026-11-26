@@ -38,8 +38,6 @@ internal static class UiText
     public static string BatteryLabel(int? percent) =>
         percent is int value ? $"{value}%" : Unknown;
 
-    public static string LowestLabel(int? percent) => $"最低 {BatteryLabel(percent)}";
-
     public static string TrayTip(int? percent, int count, bool demo)
     {
         var head = demo ? "外设电量（演示）" : "外设电量";

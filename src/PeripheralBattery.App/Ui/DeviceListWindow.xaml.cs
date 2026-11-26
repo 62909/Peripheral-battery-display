@@ -34,8 +34,7 @@ public partial class DeviceListWindow : Window
         string? error,
         bool demo,
         DateTime? refreshedAt,
-        bool light,
-        string? hidSightings = null)
+        bool light)
     {
         var palette = new Palette(light);
         var background = palette.Brush(palette.Background);
@@ -46,7 +45,6 @@ public partial class DeviceListWindow : Window
         Shell.BorderBrush = line;
         TitleText.Foreground = text;
         SubtitleText.Foreground = muted;
-        FooterText.Foreground = muted;
         BannerText.Foreground = palette.Tone(BatteryTone.Low);
         EmptyText.Foreground = muted;
         StyleButton(RefreshButton, palette);
@@ -63,7 +61,6 @@ public partial class DeviceListWindow : Window
 
         BannerText.Visibility = string.IsNullOrWhiteSpace(error) ? Visibility.Collapsed : Visibility.Visible;
         BannerText.Text = error ?? "";
-        FooterText.Text = hasRefreshed ? UiText.LowestLabel(BatteryMath.Lowest(devices)) : UiText.Reading;
 
         Rows.Children.Clear();
         var showEmpty = hasRefreshed && devices.Count == 0;
@@ -74,18 +71,6 @@ public partial class DeviceListWindow : Window
             foreach (var device in devices)
                 Rows.Children.Add(BuildRow(device, palette, text, muted));
         }
-
-        if (string.IsNullOrWhiteSpace(hidSightings))
-            return;
-
-        Rows.Children.Add(new TextBlock
-        {
-            Text = hidSightings,
-            FontSize = 11,
-            Foreground = muted,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(12, 8, 12, 10),
-        });
     }
 
     public new void Show()

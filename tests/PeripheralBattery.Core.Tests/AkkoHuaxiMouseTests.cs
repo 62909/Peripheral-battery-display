@@ -125,21 +125,6 @@ public class AkkoHuaxiMouseTests
         Assert.DoesNotContain("空影", device.DisplayName ?? "");
     }
 
-    [Fact]
-    public void A_sighting_that_includes_ffa8_does_not_say_the_battery_was_skipped()
-    {
-        var text = HidSightingText.Format(
-        [
-            new HidInterfaceSighting(0x38EE, 0x0022, "AKKO", 0x0001, 0x0002),
-            new HidInterfaceSighting(0x38EE, 0x0022, "AKKO", 0xFFA8, 0x0002),
-        ]);
-
-        Assert.Contains("38EE:0022", text);
-        Assert.Contains("FFA8:0002", text);
-        Assert.DoesNotContain("%", text);
-        Assert.DoesNotContain("空影", text);
-    }
-
     private static byte[] Packet(int level, int charging, int full)
     {
         var payload = new byte[AkkoHuaxiMouse.HeaderLength + AkkoHuaxiMouse.FullOffset + 1];

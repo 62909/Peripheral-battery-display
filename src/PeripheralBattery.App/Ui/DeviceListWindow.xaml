@@ -29,7 +29,6 @@
         </StackPanel>
       </Grid>
       <TextBlock x:Name="BannerText" DockPanel.Dock="Top" Margin="10,0,10,6" FontSize="11" TextWrapping="Wrap" Visibility="Collapsed" />
-      <TextBlock x:Name="FooterText" DockPanel.Dock="Bottom" Margin="10,6,10,4" FontSize="11" />
       <TextBlock x:Name="EmptyText" Margin="12,16,12,18" FontSize="12" TextWrapping="Wrap" Visibility="Collapsed" />
       <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel x:Name="Rows" />
