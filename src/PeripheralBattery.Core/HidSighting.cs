@@ -13,8 +13,7 @@ public readonly record struct HidInterfaceSighting(
 
 /// <summary>
 /// Text for the interfaces a refresh actually enumerated.
-/// 38EE interfaces that are not the vendor collection FF1C:0092 keep the
-/// reported product string and ids. The vendor battery query is not claimed for those.
+/// A sighting is a name and VID/PID. It is not a battery reading.
 /// </summary>
 public static class HidSightingText
 {
@@ -58,7 +57,7 @@ public static class HidSightingText
         if (!string.IsNullOrWhiteSpace(group.Name))
             parts.Add(group.Name);
         parts.Add(vid.ToString("X4") + ":" + pid.ToString("X4"));
-        if (vid == AkkoTan8Ultra.VendorId && group.Usages.Count > 0)
+        if (pid == AkkoHuaxiMouse.ProductId && vid == AkkoHuaxiMouse.VendorId && group.Usages.Count > 0)
         {
             parts.Add(string.Join(
                 "、",
@@ -68,33 +67,14 @@ public static class HidSightingText
                     .Select(item => item.Page.ToString("X4") + ":" + item.Usage.ToString("X4"))));
         }
 
-        var line = string.Join(" · ", parts);
-        var sawTan8Collection = group.Usages.Any(item => AkkoTan8Ultra.IsVendorCollection(item.Page, item.Usage));
-        var sawHuaxiCollection = pid == AkkoHuaxiMouse.ProductId
-            && group.Usages.Any(item => AkkoHuaxiMouse.IsInfoCollection(item.Page, item.Usage));
-        if (vid == AkkoTan8Ultra.VendorId && !sawTan8Collection && !sawHuaxiCollection)
-        {
-            var collection = AkkoTan8Ultra.UsagePage.ToString("X4") + ":" + AkkoTan8Ultra.Usage.ToString("X4");
-            line += "（不是厂商集合 " + collection + "，没有查询电量）";
-        }
-
-        return line;
+        return string.Join(" · ", parts);
     }
 
-    /// <summary>
-    /// The product string is shown as reported. The TAN8 Ultra names are not,
-    /// because those are assigned only after cid 2 on a vendor collection.
-    /// </summary>
     private static string? ReportableName(string? reported)
     {
         if (string.IsNullOrWhiteSpace(reported))
             return null;
-        var name = reported.Trim();
-        if (string.Equals(name, AkkoTan8Ultra.ModelName, StringComparison.Ordinal))
-            return null;
-        if (string.Equals(name, "Echo TAN8 Ultra", StringComparison.OrdinalIgnoreCase))
-            return null;
-        return name;
+        return reported.Trim();
     }
 
     private sealed class Group

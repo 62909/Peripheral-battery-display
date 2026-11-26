@@ -29,21 +29,21 @@ public class AggregatorTests
         [
             new RawDeviceReading
             {
-                SourceId = "akko-tan8-ultra",
+                SourceId = "akko-huaxi",
                 Priority = SourcePriority.Vendor,
-                InstanceId = "akko-tan8:38EE:0024",
+                InstanceId = "huaxi:38EE:0022",
                 VendorId = 0x38EE,
-                ProductId = 0x0024,
+                ProductId = 0x0022,
                 KindHint = DeviceKind.Mouse,
                 BatteryPercent = null,
-                Note = AkkoTan8Ultra.NoteNoIdentityReply,
+                Note = AkkoHuaxiMouse.NoteNoInfoReply,
             },
         ], EmptyOverrideStore.Instance);
 
         var device = Assert.Single(devices);
         Assert.Null(device.DisplayName);
         Assert.Null(device.BatteryPercent);
-        Assert.Equal(AkkoTan8Ultra.NoteNoIdentityReply, device.Note);
+        Assert.Equal(AkkoHuaxiMouse.NoteNoInfoReply, device.Note);
         Assert.Equal(DeviceKind.Mouse, device.Kind);
     }
 

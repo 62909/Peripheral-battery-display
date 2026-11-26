@@ -6,8 +6,8 @@ using PeripheralBattery.Native;
 namespace PeripheralBattery.Sources;
 
 /// <summary>
-/// 38EE:0022 on the Huaxi collection FFA8:0002 (USB MI_02). The mouse
-/// interface MI_00 is not opened for this protocol, and TAN8 commands are not sent.
+/// 38EE:0022 on the Huaxi collection FFA8:0002 (USB MI_02).
+/// The mouse interface MI_00 is not queried.
 /// </summary>
 internal sealed class AkkoHuaxiSource : IVendorBatterySource
 {

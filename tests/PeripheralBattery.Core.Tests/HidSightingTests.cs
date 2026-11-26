@@ -5,7 +5,7 @@ namespace PeripheralBattery.Core.Tests;
 public class HidSightingTests
 {
     [Fact]
-    public void Standard_mouse_collection_on_38ee_0022_is_named_by_id_and_not_queried()
+    public void Mouse_collection_on_38ee_0022_is_name_and_ids_only()
     {
         var text = HidSightingText.Format(
         [
@@ -14,35 +14,20 @@ public class HidSightingTests
         ]);
 
         Assert.Contains("USB Optical Mouse · 38EE:0022 · 0001:0002", text);
-        Assert.Contains("不是厂商集合 FF1C:0092，没有查询电量", text);
-        Assert.DoesNotContain("空影", text);
-        Assert.DoesNotContain("TAN8", text);
         Assert.DoesNotContain("%", text);
-
-        var labeledByTheDevice = HidSightingText.Format(
-        [
-            new HidInterfaceSighting(0x38EE, 0x0022, AkkoTan8Ultra.ModelName, 0x0001, 0x0002),
-            new HidInterfaceSighting(0x38EE, 0x0022, "Echo TAN8 Ultra", 0x0001, 0x0002),
-        ]);
-        Assert.DoesNotContain("空影", labeledByTheDevice);
-        Assert.DoesNotContain("TAN8", labeledByTheDevice);
-        Assert.Contains("38EE:0022 · 0001:0002", labeledByTheDevice);
-        Assert.DoesNotContain("%", labeledByTheDevice);
         Assert.Equal(1, text.Split('\n').Count(line => line.Contains("38EE:0022", StringComparison.Ordinal)));
     }
 
     [Fact]
-    public void Vendor_collection_on_a_documented_id_does_not_say_the_query_was_skipped()
+    public void Ffa8_collection_is_listed_with_the_same_usb_id()
     {
         var text = HidSightingText.Format(
         [
-            new HidInterfaceSighting(0x38EE, 0x0024, null, 0x0001, 0x0002),
-            new HidInterfaceSighting(0x38EE, 0x0024, null, 0xFF1C, 0x0092),
+            new HidInterfaceSighting(0x38EE, 0x0022, "AKKO", 0x0001, 0x0002),
+            new HidInterfaceSighting(0x38EE, 0x0022, "AKKO", 0xFFA8, 0x0002),
         ]);
 
-        Assert.Contains("38EE:0024 · 0001:0002、FF1C:0092", text);
-        Assert.DoesNotContain("没有查询电量", text);
-        Assert.DoesNotContain(AkkoTan8Ultra.ModelName, text);
+        Assert.Contains("AKKO · 38EE:0022 · 0001:0002、FFA8:0002", text);
         Assert.DoesNotContain("%", text);
     }
 

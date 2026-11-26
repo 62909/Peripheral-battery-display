@@ -14,7 +14,6 @@ public class AkkoHuaxiMouseTests
         Assert.True(AkkoHuaxiMouse.IsInfoCollection(0xFFA8, 0x0002));
         Assert.False(AkkoHuaxiMouse.IsInfoCollection(0x0001, 0x0002));
         Assert.False(AkkoHuaxiMouse.IsInfoCollection(0xFF1C, 0x0092));
-        Assert.False(AkkoTan8Ultra.IsCandidate(0x38EE, 0x0022));
     }
 
     [Fact]
@@ -73,7 +72,7 @@ public class AkkoHuaxiMouseTests
         Assert.False(AkkoHuaxiMouse.TryParseInfoPayload(badStatus, out _));
 
         var otherCommand = Packet(50, charging: 0, full: 0);
-        otherCommand[0] = AkkoTan8Ultra.BatteryCommand;
+        otherCommand[0] = 0x01;
         Assert.False(AkkoHuaxiMouse.TryParseInfoPayload(otherCommand, out _));
 
         var shortPacket = new byte[] { 129, 0, 0, 40 };
@@ -101,7 +100,6 @@ public class AkkoHuaxiMouseTests
         Assert.Null(device.DisplayName);
         Assert.Equal(40, device.BatteryPercent);
         Assert.DoesNotContain("空影", device.DisplayName ?? "");
-        Assert.NotEqual(AkkoTan8Ultra.ModelName, device.DisplayName);
     }
 
     [Fact]
@@ -115,9 +113,8 @@ public class AkkoHuaxiMouseTests
 
         Assert.Contains("38EE:0022", text);
         Assert.Contains("FFA8:0002", text);
-        Assert.DoesNotContain("没有查询电量", text);
         Assert.DoesNotContain("%", text);
-        Assert.DoesNotContain(AkkoTan8Ultra.ModelName, text);
+        Assert.DoesNotContain("空影", text);
     }
 
     private static byte[] Packet(int level, int charging, int full)
