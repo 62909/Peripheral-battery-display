@@ -39,7 +39,9 @@ public sealed class AppController : IDisposable
     private int _placedW;
     private int _placedH;
     private bool _placedMode;
-    private bool _menuOpen;
+    private TrayMenuSession _menuSession;
+    private IntPtr _menuShell;
+    private bool _retriedForeground;
     private bool _disposed;
 
     public AppController(bool sessionDemo)
@@ -101,27 +103,32 @@ public sealed class AppController : IDisposable
 
     public void ShowMenu()
     {
-        if (_menuOpen || _disposed)
+        if (_disposed)
             return;
         if (!NativeMethods.GetCursorPos(out var point))
             return;
+        var next = _menuSession.Note(TrayActivation.Menu);
+        if (next == _menuSession)
+            return;
 
         // The placed pill is owned by Shell_TrayWnd so a click on empty taskbar
-        // space cannot cover it. That cross-process owner joins this thread's
-        // input queue to Explorer, and the context menu is then dismissed
-        // before it paints. Drop the owner for the menu and put it back when
-        // the menu closes. Opening waits until this click returns, so the
-        // button-up that asked for the menu does not dismiss it.
-        _menuOpen = true;
+        // space cannot cover it. That owner joins this thread's input queue to
+        // Explorer. Clearing the owner does not detach the queue, and a menu
+        // opened on the joined queue is dismissed as a click outside.
+        // Take foreground while this click still allows it, detach, then open
+        // at background priority. That priority does not run while Win32 input
+        // is queued, so the button-up is gone before the popup exists. Normal
+        // priority runs while the click is still queued: the menu paints, then
+        // the button-up closes it. WM_RBUTTONUP and WM_CONTEXTMENU are one session.
+        _menuSession = next;
+        _retriedForeground = false;
         try
         {
-            ReleaseTrayOwner();
-            NativeMethods.MakeForeground(_tray.Hwnd);
+            _menuShell = ReleaseTrayOwner();
+            ArmMenuForeground();
             var dpi = DpiNear(point.X, point.Y);
             var entries = BuildMenu();
-            _dispatcher.BeginInvoke(
-                DispatcherPriority.Normal,
-                new Action(() => OpenMenu(point.X, point.Y, dpi, entries)));
+            QueueMenu(point.X, point.Y, dpi, entries);
         }
         catch (Exception ex)
         {
@@ -323,8 +330,23 @@ public sealed class AppController : IDisposable
         _list.Show();
     }
 
+    private void ArmMenuForeground()
+    {
+        NativeMethods.MakeForeground(_tray.Hwnd);
+        NativeMethods.DetachInput(_menuShell);
+    }
+
+    private void QueueMenu(int physicalX, int physicalY, int dpi, List<MenuEntry> entries)
+    {
+        _dispatcher.BeginInvoke(
+            DispatcherPriority.Background,
+            new Action(() => OpenMenu(physicalX, physicalY, dpi, entries)));
+    }
+
     private void OpenMenu(int physicalX, int physicalY, int dpi, List<MenuEntry> entries)
     {
+        if (_menuSession.RestoreTaskbarOwner)
+            return;
         if (_disposed)
         {
             EndMenu();
@@ -333,6 +355,18 @@ public sealed class AppController : IDisposable
 
         try
         {
+            NativeMethods.DetachInput(_menuShell);
+            // Past the click. Explorer may be foreground again. Take it back
+            // once, then wait until the input from that attach has drained.
+            // Showing in this same call would capture the mouse and lose it.
+            if (!_retriedForeground && NativeMethods.GetForegroundWindow() != _tray.Hwnd)
+            {
+                _retriedForeground = true;
+                ArmMenuForeground();
+                QueueMenu(physicalX, physicalY, dpi, entries);
+                return;
+            }
+
             TrayMenu.Show(_menuAnchor, _tray.Hwnd, physicalX, physicalY, dpi, entries, EndMenu);
         }
         catch (Exception ex)
@@ -344,16 +378,18 @@ public sealed class AppController : IDisposable
 
     private void EndMenu()
     {
-        if (!_menuOpen)
+        if (_menuSession.RestoreTaskbarOwner)
             return;
-        _menuOpen = false;
+        _menuSession = _menuSession.End();
+        _menuShell = IntPtr.Zero;
+        _retriedForeground = false;
         if (!_disposed)
             FollowTaskbar();
     }
 
     private void FollowTaskbar()
     {
-        if (_disposed || _menuOpen)
+        if (_disposed || !_menuSession.RestoreTaskbarOwner)
             return;
         EnsureWidget();
         var bar = ResolveAnchor();
@@ -422,8 +458,9 @@ public sealed class AppController : IDisposable
         // over other topmost windows and covers this overlay. Owning the popup
         // to that tray keeps the pill above the bar. SetWindowPos applies the
         // owner change; without it the click stays covered. Skip that while a
-        // menu is open: ShowMenu cleared the owner so the menu can stay up.
-        if (!_menuOpen)
+        // menu session is active: ShowMenu cleared the owner so the menu can
+        // stay up, and putting the owner back joins Explorer's input queue.
+        if (_menuSession.RestoreTaskbarOwner)
             BindTrayOwner(hwnd, tray);
         NativeMethods.SetWindowPos(
             hwnd,
@@ -485,13 +522,14 @@ public sealed class AppController : IDisposable
         NativeMethods.SetWindowLongPtr(hwnd, NativeMethods.GwlpHwndParent, tray);
     }
 
-    private void ReleaseTrayOwner()
+    private IntPtr ReleaseTrayOwner()
     {
         var hwnd = WidgetHandle();
         if (hwnd == IntPtr.Zero)
-            return;
-        if (NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GwlpHwndParent) == IntPtr.Zero)
-            return;
+            return IntPtr.Zero;
+        var owner = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GwlpHwndParent);
+        if (owner == IntPtr.Zero)
+            return IntPtr.Zero;
         NativeMethods.SetWindowLongPtr(hwnd, NativeMethods.GwlpHwndParent, IntPtr.Zero);
         NativeMethods.SetWindowPos(
             hwnd,
@@ -501,6 +539,8 @@ public sealed class AppController : IDisposable
             0,
             0,
             (uint)(NativeMethods.SwpNoMove | NativeMethods.SwpNoSize | NativeMethods.SwpNoActivate));
+        NativeMethods.DetachInput(owner);
+        return owner;
     }
 
     private static bool IsAbove(IntPtr window, IntPtr other)
