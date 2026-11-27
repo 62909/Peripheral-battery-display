@@ -244,6 +244,162 @@ public class AtkOfficialTests
         Assert.Contains(devices, device => device.Kind == DeviceKind.Mouse && device.BatteryPercent == 40 && device.Charging == true);
     }
 
+    [Fact]
+    public void Evision_matches_the_shared_320f_controller_and_ignores_other_ids()
+    {
+        Assert.True(AtkEvisionKeyboard.IsCollection(0x320F, 0x5055, 0xFF1C, 0x0092));
+        Assert.True(AtkEvisionKeyboard.IsCollection(0x320F, 0x5088, 0xFF1C, 0x0092));
+        Assert.False(AtkEvisionKeyboard.IsCollection(0x373B, 0x5055, 0xFF1C, 0x0092));
+        Assert.False(AtkEvisionKeyboard.IsCollection(0x320F, 0x5055, 0xFF60, 0x0061));
+        Assert.False(AtkEvisionKeyboard.IsCollection(0x320F, 0x5055, 0xFF1C, 0x0002));
+        Assert.False(AtkEvisionKeyboard.IsCollection(0x320F, 0x111E, 0xFF1C, 0x0092));
+        Assert.False(AtkEvisionKeyboard.IsCollection(0x373B, 4679, 0xFF60, 0x0061));
+        Assert.False(AtkHfdKeyboard.IsCollection(0x320F, 0x5088, 0xFF1C, 0x0092));
+        Assert.False(AtkHfdKeyboard.IsCollection(0x373B, 4679, 0xFF60, 0x0061));
+    }
+
+    [Fact]
+    public void Evision_request_is_command_26_with_a_little_endian_request_code()
+    {
+        var wired = AtkEvisionKeyboard.BatteryRequest(AtkEvisionKeyboard.WiredProductId, 0x0201);
+        Assert.Equal(63, wired.Length);
+        Assert.Equal(new byte[] { 0x01, 0x02, AtkEvisionKeyboard.PowerCommand }, wired[..3]);
+        Assert.All(wired.Skip(3), b => Assert.Equal(0, b));
+
+        var dongle = AtkEvisionKeyboard.BatteryRequest(AtkEvisionKeyboard.DongleProductId);
+        Assert.Equal(31, dongle.Length);
+        Assert.Equal(new byte[] { 0x01, 0x00, 26 }, dongle[..3]);
+        Assert.All(dongle.Skip(3), b => Assert.Equal(0, b));
+        Assert.Empty(AtkEvisionKeyboard.BatteryRequest(0x111E));
+    }
+
+    [Theory]
+    [InlineData(0, 0, false)]
+    [InlineData(40, 2, true)]
+    [InlineData(100, 1, false)]
+    public void Evision_level_is_the_first_data_byte_and_charge_2_means_charging(int level, int charge, bool charging)
+    {
+        var web = EvisionReply(level, charge, prefix: false, payloadLength: 63);
+        Assert.True(AtkEvisionKeyboard.TryParseBattery(web, out var plain, out var plainCharge));
+        Assert.Equal(level, plain);
+        Assert.Equal(charging, plainCharge);
+
+        var windows = EvisionReply(level, charge, prefix: true, payloadLength: 31);
+        Assert.True(AtkEvisionKeyboard.TryParseBattery(windows, out var framed, out var framedCharge));
+        Assert.Equal(level, framed);
+        Assert.Equal(charging, framedCharge);
+    }
+
+    [Fact]
+    public void Evision_keeps_an_out_of_range_level_unknown_and_ignores_a_failure_reply()
+    {
+        Assert.True(AtkEvisionKeyboard.TryParseBattery(EvisionReply(101, 2, prefix: false, payloadLength: 63), out var over, out var charging));
+        Assert.Null(over);
+        Assert.Equal(true, charging);
+        Assert.True(AtkEvisionKeyboard.TryParseBattery(EvisionReply(255, 0, prefix: true, payloadLength: 31), out var high, out var idle));
+        Assert.Null(high);
+        Assert.Equal(false, idle);
+
+        Assert.False(AtkEvisionKeyboard.TryParseBattery(EvisionReply(40, 2, prefix: true, payloadLength: 63, status: AtkEvisionKeyboard.Failure), out _, out _));
+        Assert.False(AtkEvisionKeyboard.TryParseBattery(EvisionReply(40, 2, prefix: false, payloadLength: 31, requestCode: 2), out _, out _));
+
+        var lowByteIsReportId = EvisionReply(18, 2, prefix: true, payloadLength: 63, requestCode: 4);
+        Assert.Equal(AtkEvisionKeyboard.ReportId, lowByteIsReportId[0]);
+        Assert.Equal(AtkEvisionKeyboard.ReportId, lowByteIsReportId[1]);
+        Assert.True(AtkEvisionKeyboard.TryParseBattery(lowByteIsReportId, 4, out var level, out var on));
+        Assert.Equal(18, level);
+        Assert.Equal(true, on);
+        Assert.True(AtkEvisionKeyboard.TryParseBattery(EvisionReply(18, 2, prefix: false, payloadLength: 63, requestCode: 4), 4, out level, out on));
+        Assert.Equal(18, level);
+        Assert.Equal(true, on);
+    }
+
+    [Fact]
+    public void Evision_wired_and_dongle_use_different_buffer_lengths()
+    {
+        var wired = new ScriptedLink();
+        wired.Replies.Enqueue(EvisionReply(72, 0, prefix: true, payloadLength: 63));
+        var wiredResult = AtkEvisionKeyboard.ReadBattery(
+            wired, 64, 64, AtkEvisionKeyboard.WiredProductId, CancellationToken.None, () => wired.Now);
+        Assert.Equal(AtkExchangeStatus.Ok, wiredResult.Status);
+        Assert.Equal(72, wiredResult.Battery.Percent);
+        Assert.Equal(false, wiredResult.Battery.Charging);
+        Assert.Equal(64, wired.Sent[0].Length);
+        Assert.Equal(AtkEvisionKeyboard.ReportId, wired.Sent[0][0]);
+        Assert.Equal(new byte[] { 1, 0, 26 }, wired.Sent[0][1..4]);
+        Assert.All(wired.Sent[0].Skip(4), b => Assert.Equal(0, b));
+
+        var dongle = new ScriptedLink();
+        dongle.Replies.Enqueue(EvisionReply(41, 2, prefix: false, payloadLength: 31));
+        var dongleResult = AtkEvisionKeyboard.ReadBattery(
+            dongle, 32, 32, AtkEvisionKeyboard.DongleProductId, CancellationToken.None, () => dongle.Now);
+        Assert.Equal(AtkExchangeStatus.Ok, dongleResult.Status);
+        Assert.Equal(41, dongleResult.Battery.Percent);
+        Assert.Equal(true, dongleResult.Battery.Charging);
+        Assert.Equal(32, dongle.Sent[0].Length);
+        Assert.Equal(new byte[] { AtkEvisionKeyboard.ReportId, 1, 0, 26 }, dongle.Sent[0][..4]);
+        Assert.All(dongle.Sent[0].Skip(4), b => Assert.Equal(0, b));
+
+        var over = new ScriptedLink();
+        over.Replies.Enqueue(EvisionReply(101, 2, prefix: true, payloadLength: 63));
+        var overResult = AtkEvisionKeyboard.ReadBattery(
+            over, 64, 64, AtkEvisionKeyboard.WiredProductId, CancellationToken.None, () => over.Now);
+        Assert.Equal(AtkExchangeStatus.LevelOutOfRange, overResult.Status);
+        Assert.Null(overResult.Battery.Percent);
+        Assert.Equal(true, overResult.Battery.Charging);
+
+        var failed = new ScriptedLink();
+        failed.Replies.Enqueue(EvisionReply(80, 2, prefix: true, payloadLength: 31, status: AtkEvisionKeyboard.Failure));
+        var failedResult = AtkEvisionKeyboard.ReadBattery(
+            failed, 32, 32, AtkEvisionKeyboard.DongleProductId, CancellationToken.None, () => failed.Now);
+        Assert.Equal(AtkExchangeStatus.NoReply, failedResult.Status);
+        Assert.Null(failedResult.Battery.Percent);
+        Assert.Equal(0, failed.Now);
+
+        Assert.Empty(AtkOfficialExchange.FrameOutput(63, AtkEvisionKeyboard.ReportId, AtkEvisionKeyboard.BatteryRequest(AtkEvisionKeyboard.WiredProductId)));
+        Assert.Empty(AtkOfficialExchange.FrameOutput(31, AtkEvisionKeyboard.ReportId, AtkEvisionKeyboard.BatteryRequest(AtkEvisionKeyboard.DongleProductId)));
+        var shortLink = new ScriptedLink();
+        var shortResult = AtkEvisionKeyboard.ReadBattery(
+            shortLink, 32, 31, AtkEvisionKeyboard.DongleProductId, CancellationToken.None, () => shortLink.Now);
+        Assert.Equal(AtkExchangeStatus.SendFailed, shortResult.Status);
+        Assert.Empty(shortLink.Sent);
+    }
+
+    [Fact]
+    public void An_evision_keyboard_uses_the_hid_product_string_and_does_not_invent_a_model()
+    {
+        var devices = DeviceAggregator.Combine(
+        [
+            new RawDeviceReading
+            {
+                SourceId = "atk-evision",
+                Priority = SourcePriority.Vendor,
+                InstanceId = "atk-evision:320F:5088",
+                WindowsName = "ATK V75X 2.4G Dongle",
+                VendorId = 0x320F,
+                ProductId = 0x5088,
+                KindHint = DeviceKind.Keyboard,
+                BatteryPercent = 72,
+                Charging = false,
+            },
+            new RawDeviceReading
+            {
+                SourceId = "atk-evision",
+                Priority = SourcePriority.Vendor,
+                InstanceId = "atk-evision:320F:5055",
+                VendorId = 0x320F,
+                ProductId = 0x5055,
+                KindHint = DeviceKind.Keyboard,
+                BatteryPercent = 40,
+            },
+        ], EmptyOverrideStore.Instance);
+
+        Assert.Equal(2, devices.Count);
+        Assert.Contains(devices, device => device.DisplayName == "ATK V75X 2.4G Dongle" && device.Kind == DeviceKind.Keyboard && device.BatteryPercent == 72 && device.Charging == false);
+        Assert.Contains(devices, device => device.DisplayName is null && device.Kind == DeviceKind.Keyboard && device.BatteryPercent == 40);
+        Assert.DoesNotContain(devices, device => device.DisplayName is "V75X" or "ATK V75X");
+    }
+
     private static byte[] BitmouseReply(byte command, int data, int status, bool prefix)
     {
         var payload = new byte[63];
@@ -272,6 +428,17 @@ public class AtkOfficialTests
         payload[AtkHechi.ChargeIndex] = (byte)charge;
         payload[AtkHechi.LevelIndex] = (byte)level;
         return prefix ? Prefix(AtkHechi.ReportId, payload) : payload;
+    }
+
+    private static byte[] EvisionReply(int level, int charge, bool prefix, int payloadLength, ushort requestCode = AtkEvisionKeyboard.RequestCode, byte status = AtkEvisionKeyboard.PowerCommand)
+    {
+        var payload = new byte[payloadLength];
+        payload[0] = (byte)requestCode;
+        payload[1] = (byte)(requestCode >> 8);
+        payload[2] = status;
+        payload[AtkEvisionKeyboard.LevelOffset] = (byte)level;
+        payload[AtkEvisionKeyboard.ChargeOffset] = (byte)charge;
+        return prefix ? Prefix(AtkEvisionKeyboard.ReportId, payload) : payload;
     }
 
     private static byte[] HfdReply(int level, int charge)
