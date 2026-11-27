@@ -12,5 +12,6 @@ internal static class VendorSourceRegistry
     public static IEnumerable<IVendorBatterySource> Create()
     {
         yield return new AkkoHuaxiSource();
+        yield return new AtkOfficialSource();
     }
 }
