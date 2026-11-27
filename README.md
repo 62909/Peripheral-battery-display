@@ -75,9 +75,18 @@ Windows 10/11 x64 上的托盘小工具。它列出已连接的键盘、鼠标�
 
 `38EE:0022` 走 hub.akkogear.com 的华兮页面（`infortech-sdk.esm.js`）。只打开厂商集合 `FFA8:0002`（这台机器上是 `MI_02` `Col03`）。标准鼠标集合 `0001:0002`（`MI_00`）不查询。报告号是 11，命令是 `DevGetInfo`（129，负载 `81 00`）。应答第 0 字节必须是 129，第 2 字节必须是 0，然后丢掉前 3 字节，第 14 字节才是电量。只有 0–100 显示为百分比，不把更大的数截成 100。充电标志和充满标志不拿来当百分比。这个 USB ID 不写成型号；名称用 HID 产品字符串，没有就写未知。
 
+ATK 走官方网页驱动 [hub.atk.pro](https://hub.atk.pro/)（对照的是 2026-11-25 的 hub-v3 **3.2.34**，脚本在 `bpcdn.atkgear.com`）。型号不共用一套电量协议，所以按官方过滤器分开读。名称仍用 HID 产品字符串，不用驱动里的型号表；没有字符串就写未知。大于 100 的电量不截成 100。
+
+- **BITMOUSE**（`filter-CWFKFZdv.js`）：`373B`，用法页 `FF05` 用法 `0001`，报告号 8，63 字节。先发 `GetDeviceType`（26）。类型 0、1、4、5 是接收器，电量改向 target 1；2、3、6、7 是有线，target 保持 0。然后是 `GetBatteryLevel`（7）和 `GetBatteryChargingStatus`（15）。成功应答的状态字节是 0，电量是数据区第 0 字节，充电标志 1 才算在充。官方列表里走这一套的 ATK / VXE 鼠标和 2.4G 接收器都用它，包括一部分 A9 NK、ZERO、F1 V3、X1 Ultimate。
+- **COMPX**（`filter-DZcjCGve.js`）：`373B`，用法页 `FF04` 用法 `0002`，报告号 8，16 字节。命令是 `GetBatteryLevel`（4）。校验是 `0x55` 减去（报告号 8 加前 15 字节）的低 8 位。`commandStatus` 必须是 0。电量在第 5 字节，充电字节在第 6 字节。
+- **HECHI**（`useDevice` 里的 `getMouseInfo`）：`373B`，用法页 `FFA0` 用法 `0002`，报告号 11，63 字节，命令 19。电量在偏移 17。官方读取函数会把大于 100 的数改成 100，这里不改。这是 A9 Pro Max 那一支。
+- **HFD 键盘**（控制器 `ts`，产品 ID `4382`、`4383`、`4657`、`4429`、`4430`、`4433`、`4434`）：`373B`，用法页 `FF60` 用法 `0061`，报告号 0，32 字节。命令是 `2 150 36`，后面依次是电量字节和充电字节。充电字节为 0 时，电量字节才当作百分比；不是 0 时官方驱动不给出百分比，这里也不编。
+
+BITYUAN 键盘（RS6、RS7、ATK68、ATK75、EDGE 等）用法页也是 `FF60:0061`，但官方 `getPowerInfo` 是空的，不会拿 HFD 的命令去套。HOLTEK 鼠标（用法页 `FF10`，例如一部分 X1、U2 Pro、A9 Pro）的 `getPowerInfo` 在这份驱动里没有实现，也不读。
+
 ## 读不到什么
 
-- 罗技 HID++、雷蛇，以及上面这只鼠标以外的 AKKO 型号。扩展点在 `src/PeripheralBattery.App/Sources/VendorSourceRegistry.cs`。读不到就显示未知。
+- 罗技 HID++、雷蛇，以及上面这只鼠标以外的 AKKO 型号。ATK 只读上一节列出的四套官方协议，BITYUAN 键盘和 HOLTEK 鼠标不在内。扩展点在 `src/PeripheralBattery.App/Sources/VendorSourceRegistry.cs`。读不到就显示未知。
 - 未配对、未连接，或驱动不报告电量的设备。
 - 电脑自己的电池。
 - Windows 有时会在设备断开后仍保留节点和上一次的电量字节。列表可能短暂留下这台设备。
@@ -132,6 +141,6 @@ dotnet publish src/PeripheralBattery.App/PeripheralBattery.App.csproj -c Release
 
 验证环境是 Linux，.NET SDK 8.0.428，没有蓝牙外设，也没有 Windows 桌面，所以托盘图标和任务栏拖动没有在真机上点过。
 
-- `dotnet test -c Release`：53 项通过。覆盖 GATT / HID / Windows 电量字节的解析、未知和冲突、设备分类和 VID/PID 命名、多来源合并、最低电量、任务栏比例在四条边上的位置、自动隐藏和全屏时是否显示、设置默认关闭开机启动、身份覆盖文件。
+- `dotnet test -c Release`：140 项通过。覆盖 GATT / HID / Windows 电量字节的解析、未知和冲突、设备分类和 VID/PID 命名、多来源合并、最低电量、任务栏比例在四条边上的位置、自动隐藏和全屏时是否显示、设置默认关闭开机启动、身份覆盖文件，以及 ATK 四套官方电量帧（BITMOUSE、COMPX、HECHI、HFD）的命令、校验和 0–100 边界。
 - `dotnet build src/PeripheralBattery.App/PeripheralBattery.App.csproj -c Release`：成功，0 个警告。WPF 工程、托盘图标、GATT / HID / 系统电量属性读取和任务栏跟随窗口都在这个工程里。
 - 同一条 `dotnet publish -r win-x64 --self-contained true -p:PublishSingleFile=true` 在这台机器上打出了 `PeripheralBattery.exe`。`file` 的结果是 `PE32+ executable (GUI) x86-64, for MS Windows`。没有启动它。

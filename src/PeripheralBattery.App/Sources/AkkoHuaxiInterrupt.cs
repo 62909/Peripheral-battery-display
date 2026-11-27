@@ -9,7 +9,7 @@ namespace PeripheralBattery.Sources;
 /// does the same with its inputreport listener. HidD_GetInputReport and
 /// HidD_SetOutputReport are control transfers and are not used here.
 /// </summary>
-internal sealed class AkkoHuaxiLink : IAkkoHuaxiLink, IDisposable
+internal sealed class AkkoHuaxiLink : IAkkoHuaxiLink, IAtkReportLink, IDisposable
 {
     private const int RetryPauseMs = 15;
 
