@@ -246,6 +246,8 @@ internal static class NativeMethods
     /// <see cref="SetForegroundWindow"/> then fails unless this thread is
     /// briefly attached to Explorer's input. The attachment is undone before
     /// returning so the two queues do not stay joined.
+    /// Call this before a context menu exists. Attaching after the menu has
+    /// captured the mouse releases that capture, and the menu closes.
     /// </summary>
     public static void MakeForeground(IntPtr hwnd)
     {
@@ -272,6 +274,26 @@ internal static class NativeMethods
             if (attached)
                 AttachThreadInput(foreThread, current, false);
         }
+    }
+
+    /// <summary>
+    /// Leave <paramref name="window"/>'s thread input queue. Clearing
+    /// <c>GWLP_HWNDPARENT</c> removes the owner and does not detach the queue
+    /// that owner joined. A menu opened on the still-joined queue is dismissed
+    /// as a click outside.
+    /// </summary>
+    public static void DetachInput(IntPtr window)
+    {
+        if (window == IntPtr.Zero || !IsWindow(window))
+            return;
+        var thread = GetWindowThreadProcessId(window, IntPtr.Zero);
+        var current = GetCurrentThreadId();
+        if (thread == 0 || thread == current)
+            return;
+        // The owner join and MakeForeground do not use the same argument order.
+        // Detach both. A queue that is not attached makes the call fail.
+        AttachThreadInput(thread, current, false);
+        AttachThreadInput(current, thread, false);
     }
 
     public static APPBARDATA NewAppBar(IntPtr hwnd)

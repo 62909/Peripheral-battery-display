@@ -116,6 +116,9 @@ internal sealed class TrayIconHost : IDisposable
         }
         else if (msg == TrayNotification.WmContextMenu)
         {
+            // The same right-click is also reported as WM_RBUTTONUP above.
+            // Both raise RightClick. The controller keeps one menu session,
+            // so the second report does not open a second menu.
             RightClick?.Invoke();
             handled = true;
         }

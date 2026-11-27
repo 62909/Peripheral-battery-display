@@ -71,18 +71,19 @@ internal static class TrayMenu
 
             menu.Closed += (_, _) => Finish();
             var hwnd = new WindowInteropHelper(anchor).Handle;
-            // Foreground has to be the tray message window or the popup.
-            // The anchor is WS_EX_NOACTIVATE, so SetForegroundWindow on it
-            // alone does not keep the menu up once Explorer owns the pill.
+            // The message window was brought forward while the click was still
+            // current, and Explorer's input queue was then detached. Do not
+            // attach again here. MenuBase captures the mouse as this popup
+            // opens, and a later foreground change releases that capture, so
+            // the menu paints and then closes. The popup also answers
+            // WM_MOUSEACTIVATE with MA_NOACTIVATE, and the anchor is
+            // WS_EX_NOACTIVATE, so neither can hold foreground.
             if (foreground != IntPtr.Zero)
-                NativeMethods.MakeForeground(foreground);
-            if (hwnd != IntPtr.Zero)
-                NativeMethods.SetForegroundWindow(hwnd);
+                NativeMethods.SetForegroundWindow(foreground);
             menu.IsOpen = true;
-            if (PresentationSource.FromVisual(menu) is HwndSource source && source.Handle != IntPtr.Zero)
-                NativeMethods.MakeForeground(source.Handle);
-            if (hwnd != IntPtr.Zero)
-                NativeMethods.PostMessage(hwnd, 0, IntPtr.Zero, IntPtr.Zero);
+            var notify = foreground != IntPtr.Zero ? foreground : hwnd;
+            if (notify != IntPtr.Zero)
+                NativeMethods.PostMessage(notify, 0, IntPtr.Zero, IntPtr.Zero);
             if (!menu.IsOpen)
                 Finish();
         }
