@@ -204,6 +204,8 @@ public class AkkoHuaxiExchangeTests
         var result = Read(link, 32, 32);
 
         Assert.Equal(18, result.Info.BatteryPercent);
+        Assert.False(result.Info.Charging);
+        Assert.False(PillComposition.ShowCharging(result.Info.Charging));
         Assert.Equal(
             new[] { AkkoHuaxiMouse.CurDevTypeCommand, AkkoHuaxiMouse.ConnectMouseCommand, AkkoHuaxiMouse.InfoCommand },
             link.Sent.Select(CommandByte).ToArray());

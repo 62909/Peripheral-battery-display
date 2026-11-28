@@ -4,8 +4,9 @@ namespace PeripheralBattery.Core.Tests;
 
 /// <summary>
 /// The lightning bolt is the charging mark on the device list and the taskbar pill.
-/// A protocol that already has a charging flag keeps that flag. Wired is charging
-/// only when the protocol has no charging field and the connection is wired.
+/// A shown 0–100 level on a known wired link is charging even when the official
+/// field is not. 2.4G keeps that field. An unknown link does not gain a bolt
+/// from this rule. Xiberia has no charge byte and still follows its connection table.
 /// </summary>
 public class ChargingMarkTests
 {
@@ -62,11 +63,11 @@ public class ChargingMarkTests
     }
 
     [Fact]
-    public void An_official_charging_flag_is_not_replaced_by_a_wired_connection()
+    public void A_wired_level_gets_a_bolt_and_a_dongle_stays_on_the_official_field()
     {
-        var evisionIdle = ReadEvision(72, charge: 0, AtkEvisionKeyboard.WiredProductId, payload: 63);
-        Assert.Equal(false, evisionIdle.Battery.Charging);
-        AssertNoBolt(PublishAtk(evisionIdle, DeviceKind.Keyboard), "72%");
+        var evisionWiredIdle = ReadEvision(72, charge: 0, AtkEvisionKeyboard.WiredProductId, payload: 63);
+        Assert.Equal(true, evisionWiredIdle.Battery.Charging);
+        AssertBolt(PublishAtk(evisionWiredIdle, DeviceKind.Keyboard), "72%");
 
         var evisionWired = ReadEvision(40, charge: 2, AtkEvisionKeyboard.WiredProductId, payload: 63);
         Assert.Equal(true, evisionWired.Battery.Charging);
@@ -81,8 +82,8 @@ public class ChargingMarkTests
         AssertBolt(PublishAtk(evisionDongle, DeviceKind.Keyboard), "41%");
 
         var bitmouseWiredIdle = ReadBitmouse(type: 2, level: 18, charge: 0);
-        Assert.Equal(false, bitmouseWiredIdle.Battery.Charging);
-        AssertNoBolt(PublishAtk(bitmouseWiredIdle, DeviceKind.Mouse), "18%");
+        Assert.Equal(true, bitmouseWiredIdle.Battery.Charging);
+        AssertBolt(PublishAtk(bitmouseWiredIdle, DeviceKind.Mouse), "18%");
 
         var bitmouseWired = ReadBitmouse(type: 2, level: 18, charge: 1);
         Assert.Equal(true, bitmouseWired.Battery.Charging);
@@ -98,8 +99,12 @@ public class ChargingMarkTests
 
         var missingOnWired = ReadBitmouse(type: 2, level: 18, charge: null);
         Assert.Equal(18, missingOnWired.Battery.Percent);
-        Assert.Null(missingOnWired.Battery.Charging);
-        AssertNoBolt(PublishAtk(missingOnWired, DeviceKind.Mouse), "18%");
+        Assert.Equal(true, missingOnWired.Battery.Charging);
+        AssertBolt(PublishAtk(missingOnWired, DeviceKind.Mouse), "18%");
+
+        var missingOnDongle = ReadBitmouse(type: 0, level: 55, charge: null);
+        Assert.Null(missingOnDongle.Battery.Charging);
+        AssertNoBolt(PublishAtk(missingOnDongle, DeviceKind.Mouse), "55%");
 
         Assert.True(AkkoHuaxiMouse.TryParseDeviceType(HuaxiType(AkkoHuaxiMouse.DeviceTypeMouse), out var mouse));
         Assert.Equal(HuaxiDeviceType.Mouse, mouse);
@@ -111,27 +116,47 @@ public class ChargingMarkTests
         Assert.True(akkoOn.Charging);
         AssertBolt(Publish(akkoOn.BatteryPercent, akkoOn.Charging, DeviceKind.Mouse), "62%");
 
-        var compxIdle = ReadCompx(61, charge: 0);
-        Assert.Equal(false, compxIdle.Battery.Charging);
-        AssertNoBolt(PublishAtk(compxIdle, DeviceKind.Mouse), "61%");
-        var compxOn = ReadCompx(12, charge: 1);
-        AssertBolt(PublishAtk(compxOn, DeviceKind.Mouse), "12%");
+        var compxWired = ReadCompx(61, charge: 0, type: 2);
+        Assert.Equal(true, compxWired.Battery.Charging);
+        AssertBolt(PublishAtk(compxWired, DeviceKind.Mouse), "61%");
+        var compxDongleIdle = ReadCompx(61, charge: 0, type: 1);
+        Assert.Equal(false, compxDongleIdle.Battery.Charging);
+        AssertNoBolt(PublishAtk(compxDongleIdle, DeviceKind.Mouse), "61%");
+        var compxDongleOn = ReadCompx(12, charge: 1, type: 0);
+        AssertBolt(PublishAtk(compxDongleOn, DeviceKind.Mouse), "12%");
+        var compxUnmarked = ReadCompx(33, charge: 0, type: 9);
+        Assert.Equal(false, compxUnmarked.Battery.Charging);
+        AssertNoBolt(PublishAtk(compxUnmarked, DeviceKind.Mouse), "33%");
+        var compxUnmarkedOn = ReadCompx(33, charge: 1, type: 9);
+        AssertBolt(PublishAtk(compxUnmarkedOn, DeviceKind.Mouse), "33%");
 
-        var hechiIdle = ReadHechi(77, charge: 0);
-        Assert.Equal(false, hechiIdle.Battery.Charging);
-        AssertNoBolt(PublishAtk(hechiIdle, DeviceKind.Mouse), "77%");
-        var hechiOn = ReadHechi(20, charge: 1);
-        AssertBolt(PublishAtk(hechiOn, DeviceKind.Mouse), "20%");
+        var hechiWired = ReadHechi(77, charge: 0, AtkHechi.WiredProductId);
+        Assert.Equal(true, hechiWired.Battery.Charging);
+        AssertBolt(PublishAtk(hechiWired, DeviceKind.Mouse), "77%");
+        var hechiDongle = ReadHechi(77, charge: 0, AtkHechi.DongleProductId);
+        Assert.Equal(false, hechiDongle.Battery.Charging);
+        AssertNoBolt(PublishAtk(hechiDongle, DeviceKind.Mouse), "77%");
+        var hechiDongleOn = ReadHechi(20, charge: 1, AtkHechi.Dongle8KProductId);
+        AssertBolt(PublishAtk(hechiDongleOn, DeviceKind.Mouse), "20%");
+        var hechiUnmarked = ReadHechi(40, charge: 0, 0x2134);
+        Assert.Equal(false, hechiUnmarked.Battery.Charging);
+        AssertNoBolt(PublishAtk(hechiUnmarked, DeviceKind.Mouse), "40%");
+
+        var hfdWired = ReadHfd(64, charge: 0, 4382);
+        Assert.Equal(true, hfdWired.Battery.Charging);
+        AssertBolt(PublishAtk(hfdWired, DeviceKind.Keyboard), "64%");
+        var hfdDongle = ReadHfd(64, charge: 0, 4383);
+        Assert.Equal(false, hfdDongle.Battery.Charging);
+        AssertNoBolt(PublishAtk(hfdDongle, DeviceKind.Keyboard), "64%");
+        var hfdUnmarked = ReadHfd(64, charge: 0, 4272);
+        Assert.Equal(false, hfdUnmarked.Battery.Charging);
+        AssertNoBolt(PublishAtk(hfdUnmarked, DeviceKind.Keyboard), "64%");
     }
 
     [Fact]
     public void A_charge_state_without_a_percentage_does_not_invent_a_level_or_a_bolt()
     {
-        var hfd = ReadHfd(64, charge: 0);
-        Assert.Equal(false, hfd.Battery.Charging);
-        AssertNoBolt(PublishAtk(hfd, DeviceKind.Keyboard), "64%");
-
-        var charging = ReadHfd(80, charge: 1);
+        var charging = ReadHfd(80, charge: 1, 4382);
         Assert.Equal(AtkExchangeStatus.ChargingWithoutLevel, charging.Status);
         Assert.Equal(true, charging.Battery.Charging);
         Assert.Null(charging.Battery.Percent);
@@ -239,25 +264,26 @@ public class ChargingMarkTests
         return AtkBitmouse.ReadBattery(link, 64, 64, CancellationToken.None, () => link.Now);
     }
 
-    private static AtkExchangeResult ReadCompx(int level, int charge)
+    private static AtkExchangeResult ReadCompx(int level, int charge, int type)
     {
         var link = new ScriptedLink();
+        link.Replies.Enqueue(CompxTypeReply(type));
         link.Replies.Enqueue(CompxReply(level, charge));
         return AtkCompx.ReadBattery(link, 17, 17, CancellationToken.None, () => link.Now);
     }
 
-    private static AtkExchangeResult ReadHechi(int level, int charge)
+    private static AtkExchangeResult ReadHechi(int level, int charge, int productId)
     {
         var link = new ScriptedLink();
         link.Replies.Enqueue(HechiReply(level, charge));
-        return AtkHechi.ReadBattery(link, 64, 64, CancellationToken.None, () => link.Now);
+        return AtkHechi.ReadBattery(link, 64, 64, productId, CancellationToken.None, () => link.Now);
     }
 
-    private static AtkExchangeResult ReadHfd(int level, int charge)
+    private static AtkExchangeResult ReadHfd(int level, int charge, int productId)
     {
         var link = new ScriptedLink();
         link.Replies.Enqueue(HfdReply(level, charge));
-        return AtkHfdKeyboard.ReadBattery(link, 32, 32, CancellationToken.None, () => link.Now);
+        return AtkHfdKeyboard.ReadBattery(link, 32, 32, productId, CancellationToken.None, () => link.Now);
     }
 
     private static byte[] BitmouseReply(byte command, int data)
@@ -287,6 +313,15 @@ public class ChargingMarkTests
         payload[0] = AtkCompx.BatteryCommand;
         payload[AtkCompx.LevelOffset] = (byte)level;
         payload[AtkCompx.ChargeOffset] = (byte)charge;
+        return payload;
+    }
+
+    private static byte[] CompxTypeReply(int type)
+    {
+        var payload = new byte[16];
+        payload[0] = AtkCompx.DeviceTypeCommand;
+        payload[1] = AtkCompx.Success;
+        payload[AtkCompx.DeviceTypeOffset] = (byte)type;
         return payload;
     }
 

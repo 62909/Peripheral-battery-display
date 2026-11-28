@@ -118,7 +118,7 @@ public class AtkOfficialTests
         wired.Replies.Enqueue(BitmouseReply(AtkBitmouse.BatteryCommand, 18, status: 0, prefix: true));
         var wiredResult = AtkBitmouse.ReadBattery(wired, 64, 64, CancellationToken.None, () => wired.Now);
         Assert.Equal(18, wiredResult.Battery.Percent);
-        Assert.Null(wiredResult.Battery.Charging);
+        Assert.Equal(true, wiredResult.Battery.Charging);
         Assert.Equal(0, wired.Sent[1][5]);
 
         var unknown = new ScriptedLink();
@@ -178,7 +178,7 @@ public class AtkOfficialTests
     {
         var link = new ScriptedLink();
         link.Replies.Enqueue(HfdReply(64, charge: 0));
-        var result = AtkHfdKeyboard.ReadBattery(link, 32, 32, CancellationToken.None, () => link.Now);
+        var result = AtkHfdKeyboard.ReadBattery(link, 32, 32, 4383, CancellationToken.None, () => link.Now);
         Assert.Equal(AtkExchangeStatus.Ok, result.Status);
         Assert.Equal(64, result.Battery.Percent);
         Assert.Equal(false, result.Battery.Charging);
@@ -188,7 +188,7 @@ public class AtkOfficialTests
 
         var charging = new ScriptedLink();
         charging.Replies.Enqueue(HfdReply(80, charge: 1));
-        var hidden = AtkHfdKeyboard.ReadBattery(charging, 32, 32, CancellationToken.None, () => charging.Now);
+        var hidden = AtkHfdKeyboard.ReadBattery(charging, 32, 32, 4382, CancellationToken.None, () => charging.Now);
         Assert.Equal(AtkExchangeStatus.ChargingWithoutLevel, hidden.Status);
         Assert.Null(hidden.Battery.Percent);
         Assert.Equal(true, hidden.Battery.Charging);
@@ -323,7 +323,7 @@ public class AtkOfficialTests
             wired, 64, 64, AtkEvisionKeyboard.WiredProductId, CancellationToken.None, () => wired.Now);
         Assert.Equal(AtkExchangeStatus.Ok, wiredResult.Status);
         Assert.Equal(72, wiredResult.Battery.Percent);
-        Assert.Equal(false, wiredResult.Battery.Charging);
+        Assert.Equal(true, wiredResult.Battery.Charging);
         Assert.Equal(64, wired.Sent[0].Length);
         Assert.Equal(AtkEvisionKeyboard.ReportId, wired.Sent[0][0]);
         Assert.Equal(new byte[] { 1, 0, 26 }, wired.Sent[0][1..4]);
@@ -400,6 +400,171 @@ public class AtkOfficialTests
         Assert.DoesNotContain(devices, device => device.DisplayName is "V75X" or "ATK V75X");
     }
 
+    [Fact]
+    public void A_shown_level_on_a_wired_link_draws_a_bolt_and_a_dongle_does_not()
+    {
+        var wiredKeyboard = ReadEvision(AtkEvisionKeyboard.WiredProductId, level: 72, charge: 0, payloadLength: 63);
+        Assert.Equal(72, wiredKeyboard.Percent);
+        Assert.Equal(true, wiredKeyboard.Charging);
+        AssertBolt(72, wiredKeyboard.Charging, bolt: true);
+
+        var idleDongle = ReadEvision(AtkEvisionKeyboard.DongleProductId, level: 72, charge: 0, payloadLength: 31);
+        Assert.Equal(false, idleDongle.Charging);
+        AssertBolt(72, idleDongle.Charging, bolt: false);
+
+        var chargingDongle = ReadEvision(AtkEvisionKeyboard.DongleProductId, level: 41, charge: 2, payloadLength: 31);
+        Assert.Equal(true, chargingDongle.Charging);
+        AssertBolt(41, chargingDongle.Charging, bolt: true);
+
+        var hiddenLevel = ReadEvision(AtkEvisionKeyboard.WiredProductId, level: 101, charge: 0, payloadLength: 63);
+        Assert.Null(hiddenLevel.Percent);
+        Assert.Equal(false, hiddenLevel.Charging);
+        AssertBolt(null, hiddenLevel.Charging, bolt: false);
+
+        var unmarkedKeyboard = new ScriptedLink();
+        var unmarkedKeyboardResult = AtkEvisionKeyboard.ReadBattery(
+            unmarkedKeyboard, 64, 64, 0x111E, CancellationToken.None, () => unmarkedKeyboard.Now);
+        Assert.Equal(AtkExchangeStatus.SendFailed, unmarkedKeyboardResult.Status);
+        Assert.Null(unmarkedKeyboardResult.Battery.Charging);
+        AssertBolt(null, unmarkedKeyboardResult.Battery.Charging, bolt: false);
+
+        var wiredMouse = ReadBitmouse(type: 2, level: 18, charge: 0);
+        Assert.Equal(true, wiredMouse.Charging);
+        AssertBolt(18, wiredMouse.Charging, bolt: true);
+
+        var idleReceiver = ReadBitmouse(type: 5, level: 55, charge: 0);
+        Assert.Equal(false, idleReceiver.Charging);
+        AssertBolt(55, idleReceiver.Charging, bolt: false);
+
+        var chargingReceiver = ReadBitmouse(type: 0, level: 40, charge: 1);
+        Assert.Equal(true, chargingReceiver.Charging);
+        AssertBolt(40, chargingReceiver.Charging, bolt: true);
+
+        var wiredCompx = ReadCompx(type: 2, level: 61, charge: 0);
+        Assert.Equal(true, wiredCompx.Charging);
+        AssertBolt(61, wiredCompx.Charging, bolt: true);
+
+        var idleCompx = ReadCompx(type: 1, level: 61, charge: 0);
+        Assert.Equal(false, idleCompx.Charging);
+        AssertBolt(61, idleCompx.Charging, bolt: false);
+
+        var chargingCompx = ReadCompx(type: 4, level: 12, charge: 1);
+        Assert.Equal(true, chargingCompx.Charging);
+        AssertBolt(12, chargingCompx.Charging, bolt: true);
+
+        var nearlink = ReadCompx(type: 8, level: 33, charge: 0);
+        Assert.Equal(false, nearlink.Charging);
+        AssertBolt(33, nearlink.Charging, bolt: false);
+
+        var unmarkedCompx = ReadCompx(type: 9, level: 33, charge: 0);
+        Assert.Equal(false, unmarkedCompx.Charging);
+        AssertBolt(33, unmarkedCompx.Charging, bolt: false);
+
+        var unmarkedCompxCharging = ReadCompx(type: 9, level: 33, charge: 1);
+        Assert.Equal(true, unmarkedCompxCharging.Charging);
+        AssertBolt(33, unmarkedCompxCharging.Charging, bolt: true);
+
+        var wiredHechi = ReadHechi(AtkHechi.WiredProductId, level: 40, charge: 0);
+        Assert.Equal(true, wiredHechi.Charging);
+        AssertBolt(40, wiredHechi.Charging, bolt: true);
+
+        var idleHechi = ReadHechi(AtkHechi.DongleProductId, level: 40, charge: 0);
+        Assert.Equal(false, idleHechi.Charging);
+        AssertBolt(40, idleHechi.Charging, bolt: false);
+
+        var chargingHechi = ReadHechi(AtkHechi.Dongle8KProductId, level: 77, charge: 1);
+        Assert.Equal(true, chargingHechi.Charging);
+        AssertBolt(77, chargingHechi.Charging, bolt: true);
+
+        var unmarkedHechi = ReadHechi(0x2134, level: 40, charge: 0);
+        Assert.Equal(false, unmarkedHechi.Charging);
+        AssertBolt(40, unmarkedHechi.Charging, bolt: false);
+
+        var unmarkedHechiCharging = ReadHechi(0x2134, level: 40, charge: 1);
+        Assert.Equal(true, unmarkedHechiCharging.Charging);
+        AssertBolt(40, unmarkedHechiCharging.Charging, bolt: true);
+
+        var wiredHfd = ReadHfd(4382, level: 64, charge: 0);
+        Assert.Equal(AtkExchangeStatus.Ok, wiredHfd.Status);
+        Assert.Equal(64, wiredHfd.Percent);
+        Assert.Equal(true, wiredHfd.Charging);
+        AssertBolt(64, wiredHfd.Charging, bolt: true);
+
+        var idleHfd = ReadHfd(4383, level: 64, charge: 0);
+        Assert.Equal(false, idleHfd.Charging);
+        AssertBolt(64, idleHfd.Charging, bolt: false);
+
+        var chargingHfd = ReadHfd(4430, level: 80, charge: 1);
+        Assert.Equal(AtkExchangeStatus.ChargingWithoutLevel, chargingHfd.Status);
+        Assert.Null(chargingHfd.Percent);
+        Assert.Equal(true, chargingHfd.Charging);
+        AssertBolt(null, chargingHfd.Charging, bolt: true);
+
+        var unmarkedHfd = ReadHfd(4272, level: 64, charge: 0);
+        Assert.Equal(false, unmarkedHfd.Charging);
+        AssertBolt(64, unmarkedHfd.Charging, bolt: false);
+    }
+
+    private readonly record struct Seen(int? Percent, bool? Charging, AtkExchangeStatus Status);
+
+    private static Seen ReadEvision(int productId, int level, int charge, int payloadLength)
+    {
+        var link = new ScriptedLink();
+        link.Replies.Enqueue(EvisionReply(level, charge, prefix: true, payloadLength: payloadLength));
+        var result = AtkEvisionKeyboard.ReadBattery(
+            link, payloadLength + 1, payloadLength + 1, productId, CancellationToken.None, () => link.Now);
+        return new(result.Battery.Percent, result.Battery.Charging, result.Status);
+    }
+
+    private static Seen ReadBitmouse(int type, int level, int charge)
+    {
+        var link = new ScriptedLink();
+        link.Replies.Enqueue(BitmouseReply(AtkBitmouse.DeviceTypeCommand, type, status: 0, prefix: true));
+        link.Replies.Enqueue(BitmouseReply(AtkBitmouse.BatteryCommand, level, status: 0, prefix: false));
+        link.Replies.Enqueue(BitmouseReply(AtkBitmouse.ChargingCommand, charge, status: 0, prefix: true));
+        var result = AtkBitmouse.ReadBattery(link, 64, 64, CancellationToken.None, () => link.Now);
+        return new(result.Battery.Percent, result.Battery.Charging, result.Status);
+    }
+
+    private static Seen ReadCompx(int type, int level, int charge)
+    {
+        var link = new ScriptedLink();
+        link.Replies.Enqueue(CompxTypeReply(type, prefix: true));
+        link.Replies.Enqueue(CompxReply(level, charge, status: 0, prefix: false));
+        var result = AtkCompx.ReadBattery(link, 32, 32, CancellationToken.None, () => link.Now);
+        Assert.Equal(AtkCompx.DeviceTypeCommand, link.Sent[0][1]);
+        Assert.Equal(AtkCompx.DeviceTypeDataLength, link.Sent[0][5]);
+        return new(result.Battery.Percent, result.Battery.Charging, result.Status);
+    }
+
+    private static Seen ReadHechi(int productId, int level, int charge)
+    {
+        var link = new ScriptedLink();
+        link.Replies.Enqueue(HechiReply(level, charge, prefix: true));
+        var result = AtkHechi.ReadBattery(link, 64, 64, productId, CancellationToken.None, () => link.Now);
+        return new(result.Battery.Percent, result.Battery.Charging, result.Status);
+    }
+
+    private static Seen ReadHfd(int productId, int level, int charge)
+    {
+        var link = new ScriptedLink();
+        link.Replies.Enqueue(HfdReply(level, charge));
+        var result = AtkHfdKeyboard.ReadBattery(link, 32, 32, productId, CancellationToken.None, () => link.Now);
+        return new(result.Battery.Percent, result.Battery.Charging, result.Status);
+    }
+
+    private static void AssertBolt(int? percent, bool? charging, bool bolt)
+    {
+        var box = Assert.Single(PillComposition.Arrange(
+        [
+            new PeripheralDevice("d", null, DeviceKind.Keyboard, percent, Charging: charging),
+        ]).Boxes);
+        Assert.Equal(bolt, box.Slot.Charging);
+        Assert.Equal(bolt, box.BoltX is not null);
+        if (bolt && percent is not null)
+            Assert.True(box.BoltX > box.TextX);
+    }
+
     private static byte[] BitmouseReply(byte command, int data, int status, bool prefix)
     {
         var payload = new byte[63];
@@ -418,6 +583,15 @@ public class AtkOfficialTests
         payload[1] = (byte)status;
         payload[AtkCompx.LevelOffset] = (byte)level;
         payload[AtkCompx.ChargeOffset] = (byte)charge;
+        return prefix ? Prefix(AtkCompx.ReportId, payload) : payload;
+    }
+
+    private static byte[] CompxTypeReply(int type, bool prefix)
+    {
+        var payload = new byte[16];
+        payload[0] = AtkCompx.DeviceTypeCommand;
+        payload[1] = AtkCompx.Success;
+        payload[AtkCompx.DeviceTypeOffset] = (byte)type;
         return prefix ? Prefix(AtkCompx.ReportId, payload) : payload;
     }
 

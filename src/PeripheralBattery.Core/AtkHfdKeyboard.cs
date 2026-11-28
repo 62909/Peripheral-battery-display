@@ -9,8 +9,12 @@ namespace PeripheralBattery.Core;
 /// <c>id_get_keyboard_value</c> 2, then <c>customId</c> 150, then <c>battery</c> 36.
 /// The level is the next byte and the charge byte follows it.
 /// The hub keeps the level only when the charge byte is 0. Any other charge
-/// byte is charging and the level is not a percentage. BITYUAN keyboards use
-/// the same usage page and are not this controller; they are not matched.
+/// byte is charging and the level is not a percentage. On that controller,
+/// <c>connectType</c> 2 is <c>wired1K</c> and 1 is <c>dongle4K</c>. The hub
+/// reads dongle status only when <c>connectType</c> is 1. A shown level on a
+/// wired id is charging even when the charge byte is 0. A dongle id stays on
+/// the byte. BITYUAN keyboards use the same usage page and are not this
+/// controller; they are not matched.
 /// </summary>
 public static class AtkHfdKeyboard
 {
@@ -48,6 +52,17 @@ public static class AtkHfdKeyboard
     public static bool IsCollection(int vendorId, int productId, int usagePage, int usage) =>
         vendorId == VendorId && ProductIds.Contains(productId) && usagePage == UsagePage && usage == Usage;
 
+    /// <summary>
+    /// Hub filter <c>connectType</c>. 2 (<c>wired1K</c>) is 4382, 4657, 4429,
+    /// and 4433. 1 (<c>dongle4K</c>) is 4383, 4430, and 4434.
+    /// </summary>
+    public static bool? WiredLink(int productId) => productId switch
+    {
+        0x111E or 0x1231 or 0x114D or 0x1151 => true,
+        0x111F or 0x114E or 0x1152 => false,
+        _ => null,
+    };
+
     public static byte[] BatteryRequest()
     {
         var buffer = new byte[PayloadLength];
@@ -61,6 +76,7 @@ public static class AtkHfdKeyboard
         IAtkReportLink link,
         int inputReportByteLength,
         int outputReportByteLength,
+        int productId,
         CancellationToken cancellationToken,
         Func<long>? nowMs = null,
         int timeoutMs = AtkOfficialExchange.TimeoutMs)
@@ -84,6 +100,7 @@ public static class AtkHfdKeyboard
             return new(AtkExchangeStatus.ChargingWithoutLevel, new AtkBatteryReading(null, true));
         if (percent is null)
             return new(AtkExchangeStatus.LevelOutOfRange, new AtkBatteryReading(null, charging));
+        charging = WiredCharging.Apply(charging, WiredLink(productId), percent);
         return new(AtkExchangeStatus.Ok, new AtkBatteryReading(percent, charging));
     }
 

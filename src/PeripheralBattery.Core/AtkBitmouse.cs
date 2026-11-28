@@ -14,7 +14,10 @@ namespace PeripheralBattery.Core;
 /// length 1. A reply has no checksum byte; the hub inserts a leading 0 before
 /// reusing the request offsets, so the level is the first data byte.
 /// Status 0 is success. Status 2 is ignored and the wait continues.
-/// A level outside 0–100 is not a percentage. This is not every ATK mouse.
+/// A level outside 0–100 is not a percentage. A shown 0–100 level on a wired
+/// type (2, 3, 6, 7) is charging even when <c>GetBatteryChargingStatus</c> is
+/// not 1. A receiver stays on that status. An unknown type is not queried.
+/// This is not every ATK mouse.
 /// </summary>
 public static class AtkBitmouse
 {
@@ -129,7 +132,10 @@ public static class AtkBitmouse
             && TryParseCharging(chargingReport, out var parsed))
             charging = parsed;
 
-        return new(AtkExchangeStatus.Ok, new AtkBatteryReading(percent, charging));
+        var wired = kind == AtkBitmouseLinkKind.Wired
+            ? true
+            : kind == AtkBitmouseLinkKind.Dongle ? false : (bool?)null;
+        return new(AtkExchangeStatus.Ok, new AtkBatteryReading(percent, WiredCharging.Apply(charging, wired, percent)));
     }
 
     public static bool TryParseDeviceType(ReadOnlySpan<byte> report, out AtkBitmouseLinkKind kind)

@@ -11,6 +11,8 @@ namespace PeripheralBattery.Core;
 /// <c>getDataSlice</c> drops the first 3 bytes when the payload is at least 4 bytes.
 /// On that slice, charging is offset 13, the level is offset 14, and the full flag
 /// is offset 15. A level outside 0–100 is not a percentage.
+/// The public page labels <c>0x0022</c> as the receiver connection. Device type
+/// is dongle or mouse, not a wired link, so charging stays that byte.
 /// <c>parseDevType</c> is payload byte 3: 1 dongle, 2 mouse, 3 dongle boot, 4 mouse boot.
 /// The mouse is connected only when <c>getDataSlice</c> byte 0 is 1.
 /// Windows <c>ReadFile</c> may prefix a report id. WebHID data starts at the command.
