@@ -34,8 +34,8 @@ public sealed record RawDeviceReading
     public int? BatteryPercent { get; init; }
 
     /// <summary>
-    /// Charging flag from the same report as <see cref="BatteryPercent"/>, when that report has one.
-    /// Null means the source did not provide a flag. It is never inferred.
+    /// Charging flag for this reading. True draws the bolt after the percentage.
+    /// Null means the reader did not mark charging.
     /// </summary>
     public bool? Charging { get; init; }
 

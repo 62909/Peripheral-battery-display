@@ -14,7 +14,9 @@ namespace PeripheralBattery.Core;
 /// is 63 and 2.4G is 31. A reply whose byte 2 is 255 failed. On success the
 /// data starts at offset 7: the first byte is the level and the second byte
 /// is charging only when it is 2. The hub turns a level above 100 into 100.
-/// This reader does not. Bluetooth is not in this filter.
+/// This reader does not. A shown 0–100 level on the wired id is charging even
+/// when that byte is not 2. The 2.4G id stays on the byte. Bluetooth is not
+/// in this filter.
 /// V75X Ultra is vendor <c>0x373B</c> and usage page <c>FF60</c>; it is not
 /// this controller.
 /// </summary>
@@ -46,6 +48,16 @@ public static class AtkEvisionKeyboard
         && (productId == WiredProductId || productId == DongleProductId)
         && usagePage == UsagePage
         && usage == Usage;
+
+    /// <summary>
+    /// <c>0x5055</c> is wired. <c>0x5088</c> is 2.4G. Any other id is unmarked.
+    /// </summary>
+    public static bool? WiredLink(int productId) => productId switch
+    {
+        WiredProductId => true,
+        DongleProductId => false,
+        _ => null,
+    };
 
     public static int PayloadLength(int productId) => productId switch
     {
@@ -90,6 +102,7 @@ public static class AtkEvisionKeyboard
             return new(AtkExchangeStatus.SendFailed, default);
         if (phase != AtkExchangePhase.Accepted || report is null || !TryParseBattery(report, out var percent, out var charging))
             return new(AtkExchangeStatus.NoReply, default);
+        charging = WiredCharging.Apply(charging, WiredLink(productId), percent);
         if (percent is null)
             return new(AtkExchangeStatus.LevelOutOfRange, new AtkBatteryReading(null, charging));
         return new(AtkExchangeStatus.Ok, new AtkBatteryReading(percent, charging));

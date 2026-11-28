@@ -9,6 +9,11 @@ namespace PeripheralBattery.Core;
 /// The charge byte is base offset 3 plus 13, and the level is the next byte.
 /// The hub getter turns a level above 100 into 100. This reader does not:
 /// that value is not a percentage. Charge 1 is charging and 0 is not.
+/// The hub filter marks product <c>4423</c> as the mouse and <c>4424</c> /
+/// <c>4502</c> as receivers. A shown level on 4423 is charging even when the
+/// charge byte is 0. The receivers stay on that byte. <c>wireless_connected</c>
+/// is not read by the hub, so it is not a link. Any other product id on this
+/// collection stays on the charge byte.
 /// This collection is the A9 Pro Max family in that hub, not BITMOUSE or COMPX.
 /// </summary>
 public static class AtkHechi
@@ -28,8 +33,23 @@ public static class AtkHechi
     public const string NoteNoReply = "没有收到电量报告。";
     public const string NoteLevelOutOfRange = "电量不在 0–100。";
 
+    public const int WiredProductId = 0x1147;
+    public const int DongleProductId = 0x1148;
+    public const int Dongle8KProductId = 0x1196;
+
     public static bool IsCollection(int vendorId, int productId, int usagePage, int usage) =>
         vendorId == VendorId && productId >= 0 && usagePage == UsagePage && usage == Usage;
+
+    /// <summary>
+    /// <c>4423</c> is the mouse in the hub filter. <c>4424</c> and <c>4502</c>
+    /// are <c>receiver: true</c>. Anything else on this collection is unmarked.
+    /// </summary>
+    public static bool? WiredLink(int productId) => productId switch
+    {
+        WiredProductId => true,
+        DongleProductId or Dongle8KProductId => false,
+        _ => null,
+    };
 
     public static byte[] InfoRequest()
     {
@@ -42,6 +62,7 @@ public static class AtkHechi
         IAtkReportLink link,
         int inputReportByteLength,
         int outputReportByteLength,
+        int productId,
         CancellationToken cancellationToken,
         Func<long>? nowMs = null,
         int timeoutMs = AtkOfficialExchange.TimeoutMs)
@@ -61,6 +82,7 @@ public static class AtkHechi
             return new(AtkExchangeStatus.SendFailed, default);
         if (phase != AtkExchangePhase.Accepted || report is null || !TryParseBattery(report, out var percent, out var charging))
             return new(AtkExchangeStatus.NoReply, default);
+        charging = WiredCharging.Apply(charging, WiredLink(productId), percent);
         if (percent is null)
             return new(AtkExchangeStatus.LevelOutOfRange, new AtkBatteryReading(null, charging));
         return new(AtkExchangeStatus.Ok, new AtkBatteryReading(percent, charging));

@@ -44,7 +44,7 @@ internal sealed class AtkOfficialSource : IVendorBatterySource
             "atk-hechi",
             DeviceKind.Mouse,
             AtkHechi.IsCollection,
-            (link, input, output, _, token) => AtkHechi.ReadBattery(link, input, output, token),
+            (link, input, output, productId, token) => AtkHechi.ReadBattery(link, input, output, productId, token),
             static status => status switch
             {
                 AtkExchangeStatus.LevelOutOfRange => AtkHechi.NoteLevelOutOfRange,
@@ -55,7 +55,7 @@ internal sealed class AtkOfficialSource : IVendorBatterySource
             "atk-hfd",
             DeviceKind.Keyboard,
             AtkHfdKeyboard.IsCollection,
-            (link, input, output, _, token) => AtkHfdKeyboard.ReadBattery(link, input, output, token),
+            (link, input, output, productId, token) => AtkHfdKeyboard.ReadBattery(link, input, output, productId, token),
             static status => status switch
             {
                 AtkExchangeStatus.ChargingWithoutLevel => AtkHfdKeyboard.NoteChargingWithoutLevel,
