@@ -146,4 +146,4 @@ dotnet publish src/PeripheralBattery.App/PeripheralBattery.App.csproj -c Release
 
 - `dotnet test -c Release`：169 项通过。覆盖 GATT / HID / Windows 电量字节的解析、未知和冲突、设备分类和 VID/PID 命名、多来源合并、最低电量、任务栏比例在四条边上的位置、自动隐藏和全屏时是否显示、设置默认关闭开机启动、身份覆盖文件，ATK 五套官方电量帧（BITMOUSE、COMPX、HECHI、HFD、EVISION）的命令、校验和 0–100 边界，以及西伯利亚耳机族的匹配、两条电量帧、超范围保持未知、有线型号才标充电（不是协议字节）、`10D6:4801` 按产品名区分。
 - `dotnet build src/PeripheralBattery.App/PeripheralBattery.App.csproj -c Release`：成功，0 个警告。WPF 工程、托盘图标、GATT / HID / 系统电量属性读取和任务栏跟随窗口都在这个工程里。
-- 这次没有重新打单文件安装包，也没有接上西伯利亚耳机。帧是按 hub.xiberia.net 上 2026-11-28 的官方脚本核对的，没有在真机上读过电量。程序图标换成了用户给的绿色电池，托盘仍按最低电量自己画。
+- 这次没有重新打单文件安装包，也没有接上西伯利亚耳机。帧是按 hub.xiberia.net 上 2026-11-28 的官方脚本核对的，没有在真机上读过电量。程序图标是原来的黑色横向电池，托盘仍按最低电量自己画。
