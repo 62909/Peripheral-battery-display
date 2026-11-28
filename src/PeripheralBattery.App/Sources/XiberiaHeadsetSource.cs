@@ -8,7 +8,8 @@ namespace PeripheralBattery.Sources;
 /// <summary>
 /// XIBERIA HUB headset family <c>legacy-55</c> / <c>usb-audio-k06s</c>.
 /// Opens the collection that carries report 85 and reads command 9, then
-/// command 1 when that reply has no 0–100 level. Charging is never set.
+/// command 1 when that reply has no 0–100 level. Charging follows the hub
+/// table's wired or wireless mark for that id. The reply has no charge byte.
 /// </summary>
 internal sealed class XiberiaHeadsetSource : IVendorBatterySource
 {
@@ -114,7 +115,7 @@ internal sealed class XiberiaHeadsetSource : IVendorBatterySource
                 var result = XiberiaHeadset.ReadBattery(link, caps.InputReportByteLength, caps.OutputReportByteLength, cancellationToken);
                 var percent = result.Status == AtkExchangeStatus.Ok ? result.Battery.Percent : null;
                 var note = result.Status == AtkExchangeStatus.Ok ? null : Note(result.Status);
-                return Reading(name, vendorId, productId, percent, note);
+                return Reading(name, vendorId, productId, percent, XiberiaHeadset.ChargingFor(vendorId, productId, name), note);
             }
             finally
             {
@@ -224,6 +225,7 @@ internal sealed class XiberiaHeadsetSource : IVendorBatterySource
         int vendorId,
         int productId,
         int? percent,
+        bool? charging,
         string? note) => new()
     {
         SourceId = "xiberia-headset",
@@ -234,7 +236,7 @@ internal sealed class XiberiaHeadsetSource : IVendorBatterySource
         ProductId = productId,
         KindHint = DeviceKind.Headset,
         BatteryPercent = percent,
-        Charging = null,
+        Charging = charging,
         Note = note,
     };
 

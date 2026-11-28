@@ -236,6 +236,37 @@ public class XiberiaHeadsetTests
     }
 
     [Fact]
+    public void Charging_follows_the_hub_wired_mark_and_not_the_status_bytes()
+    {
+        Assert.True(XiberiaHeadset.ChargingFor(0x36F9, 0xF014, null));
+        Assert.True(XiberiaHeadset.ChargingFor(0x10D6, 0x4801, "XIBERIA K03S"));
+        Assert.True(XiberiaHeadset.ChargingFor(0x10D6, 0x4801, "K03S WIRED"));
+
+        Assert.False(XiberiaHeadset.ChargingFor(0x36F9, 0xF008, "CROCIRIS T7"));
+        Assert.False(XiberiaHeadset.ChargingFor(0x36F9, 0xF009, null));
+        Assert.False(XiberiaHeadset.ChargingFor(0x36F9, 0xF001, null));
+        Assert.False(XiberiaHeadset.ChargingFor(0x36F9, 0xF016, null));
+        Assert.False(XiberiaHeadset.ChargingFor(0x36F9, 0xF002, null));
+
+        Assert.Null(XiberiaHeadset.ChargingFor(0x36F9, 0xD001, null));
+        Assert.Null(XiberiaHeadset.ChargingFor(0x37D3, 0xD2C9, null));
+        Assert.Null(XiberiaHeadset.ChargingFor(0x36F9, 0xC006, null));
+        Assert.Null(XiberiaHeadset.ChargingFor(0x36F9, 0xC011, null));
+        Assert.Null(XiberiaHeadset.ChargingFor(0x10D6, 0x4801, "XIBERIA WG500S"));
+        Assert.Null(XiberiaHeadset.ChargingFor(0x10D6, 0x4801, null));
+        Assert.Null(XiberiaHeadset.ChargingFor(0x36F9, XiberiaHeadset.T10WiredProductId, null));
+
+        Assert.True(XiberiaHeadset.TryParseDeviceInfo(InfoFrame(1, 40, prefix: false), out var connected, out _));
+        Assert.True(XiberiaHeadset.TryParseDeviceInfo(InfoFrame(2, 40, prefix: true), out var alsoConnected, out _));
+        Assert.Equal(40, connected);
+        Assert.Equal(connected, alsoConnected);
+
+        Assert.True(PillComposition.ShowCharging(XiberiaHeadset.ChargingFor(0x36F9, 0xF014, null)));
+        Assert.False(PillComposition.ShowCharging(XiberiaHeadset.ChargingFor(0x36F9, 0xF008, null)));
+        Assert.False(PillComposition.ShowCharging(XiberiaHeadset.ChargingFor(0x36F9, 0xD001, null)));
+    }
+
+    [Fact]
     public void The_hid_product_string_is_kept_and_no_model_name_is_invented()
     {
         var devices = DeviceAggregator.Combine(
@@ -250,6 +281,7 @@ public class XiberiaHeadsetTests
                 ProductId = 0xF008,
                 KindHint = DeviceKind.Headset,
                 BatteryPercent = 72,
+                Charging = XiberiaHeadset.ChargingFor(0x36F9, 0xF008, "XIBERIA T7"),
             },
             new RawDeviceReading
             {
@@ -260,6 +292,7 @@ public class XiberiaHeadsetTests
                 ProductId = 0xF014,
                 KindHint = DeviceKind.Headset,
                 BatteryPercent = 40,
+                Charging = XiberiaHeadset.ChargingFor(0x36F9, 0xF014, null),
             },
             new RawDeviceReading
             {
@@ -270,13 +303,15 @@ public class XiberiaHeadsetTests
                 VendorId = 0x10D6,
                 ProductId = 0x4801,
                 KindHint = DeviceKind.Headset,
+                BatteryPercent = 55,
+                Charging = XiberiaHeadset.ChargingFor(0x10D6, 0x4801, "XIBERIA WG500S"),
             },
         ], EmptyOverrideStore.Instance);
 
         Assert.Equal(3, devices.Count);
-        Assert.Contains(devices, device => device.DisplayName == "XIBERIA T7" && device.Kind == DeviceKind.Headset && device.BatteryPercent == 72 && device.Charging is null);
-        Assert.Contains(devices, device => device.DisplayName is null && device.Kind == DeviceKind.Headset && device.BatteryPercent == 40 && device.Charging is null);
-        Assert.Contains(devices, device => device.DisplayName == "XIBERIA WG500S" && device.BatteryPercent is null && device.Charging is null);
+        Assert.Contains(devices, device => device.DisplayName == "XIBERIA T7" && device.Kind == DeviceKind.Headset && device.BatteryPercent == 72 && device.Charging == false && !PillComposition.ShowCharging(device.Charging));
+        Assert.Contains(devices, device => device.DisplayName is null && device.Kind == DeviceKind.Headset && device.BatteryPercent == 40 && device.Charging == true && PillComposition.ShowCharging(device.Charging));
+        Assert.Contains(devices, device => device.DisplayName == "XIBERIA WG500S" && device.BatteryPercent == 55 && device.Charging is null && !PillComposition.ShowCharging(device.Charging));
         Assert.DoesNotContain(devices, device => device.DisplayName is "T7" or "CROCIRIS T7" or "K03S" or "WG500S" or "西伯利亚");
     }
 

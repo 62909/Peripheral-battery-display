@@ -31,6 +31,9 @@ public readonly record struct XiberiaReport(bool Present, int? BitCount);
 /// Unpacked byte 3 is the level, and only when status is not 0 and the value
 /// is at most 100. Status above 2 is not a status block.
 /// This protocol has no charging field. A level outside 0–100 stays unknown.
+/// Charging is a product rule from the hub table's <c>connectionMode</c>:
+/// <c>wired</c> is charging, <c>wireless</c> is not, and <c>unknown</c> is
+/// left unset. Status bytes are not a connection type and are not a charge flag.
 /// T10 wired <c>0x36F9:0xD003</c> is <c>t10-lxsp</c> and is not queried.
 /// <c>0x10D6:0x4801</c> is K03S wired or WG500S, chosen by the product name.
 /// </summary>
@@ -101,6 +104,24 @@ public static class XiberiaHeadset
             Model.T7Wired or Model.Wg600S or Model.Wg500S or Model.S19Gl =>
                 ReportOk(input) && ReportOk(output),
             _ => false,
+        };
+    }
+
+    /// <summary>
+    /// Hub <c>connectionMode</c> for this id, not a byte in the battery reply.
+    /// <c>wired</c> is true, <c>wireless</c> is false, <c>unknown</c> is null.
+    /// </summary>
+    public static bool? ChargingFor(int vendorId, int productId, string? productName)
+    {
+        var model = ModelFor(vendorId, productId, productName);
+        if (model is null)
+            return null;
+        return model switch
+        {
+            Model.T7Wired or Model.K03SWired => true,
+            Model.T7Wireless or Model.T7Gt or Model.T10Wireless or Model.K03SWireless => false,
+            Model.K06S when vendorId == VendorPrimary && productId == K06SWirelessProductId => false,
+            _ => null,
         };
     }
 
