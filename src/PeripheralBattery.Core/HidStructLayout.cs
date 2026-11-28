@@ -52,6 +52,45 @@ public struct HidValueCaps
     }
 }
 
+/// <summary>
+/// <c>HIDP_BUTTON_CAPS</c>. The header matches <see cref="HidValueCaps"/>
+/// through <see cref="IsAbsolute"/>; button caps then store reserved words
+/// instead of <c>BitSize</c> and <c>ReportCount</c>. The array stride is 72.
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public struct HidButtonCaps
+{
+    public ushort UsagePage;
+    public byte ReportId;
+    public byte IsAlias;
+    public ushort BitField;
+    public ushort LinkCollection;
+    public ushort LinkUsage;
+    public ushort LinkUsagePage;
+    public byte IsRange;
+    public byte IsStringRange;
+    public byte IsDesignatorRange;
+    public byte IsAbsolute;
+    public uint Reserved0;
+    public uint Reserved1;
+    public uint Reserved2;
+    public uint Reserved3;
+    public uint Reserved4;
+    public uint Reserved5;
+    public uint Reserved6;
+    public uint Reserved7;
+    public uint Reserved8;
+    public uint Reserved9;
+    public ushort UsageMin;
+    public ushort UsageMax;
+    public ushort StringMin;
+    public ushort StringMax;
+    public ushort DesignatorMin;
+    public ushort DesignatorMax;
+    public ushort DataIndexMin;
+    public ushort DataIndexMax;
+}
+
 [StructLayout(LayoutKind.Sequential)]
 public struct HidCaps
 {

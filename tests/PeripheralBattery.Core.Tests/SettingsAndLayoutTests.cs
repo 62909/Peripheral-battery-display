@@ -94,6 +94,13 @@ public class SettingsAndLayoutTests
         Assert.Equal(56, Marshal.OffsetOf<HidValueCaps>(nameof(HidValueCaps.UsageMin)).ToInt32());
         Assert.Equal(72, Marshal.SizeOf<HidValueCaps>());
 
+        Assert.Equal(2, Marshal.OffsetOf<HidButtonCaps>(nameof(HidButtonCaps.ReportId)).ToInt32());
+        Assert.Equal(6, Marshal.OffsetOf<HidButtonCaps>(nameof(HidButtonCaps.LinkCollection)).ToInt32());
+        Assert.Equal(12, Marshal.OffsetOf<HidButtonCaps>(nameof(HidButtonCaps.IsRange)).ToInt32());
+        Assert.Equal(15, Marshal.OffsetOf<HidButtonCaps>(nameof(HidButtonCaps.IsAbsolute)).ToInt32());
+        Assert.Equal(56, Marshal.OffsetOf<HidButtonCaps>(nameof(HidButtonCaps.UsageMin)).ToInt32());
+        Assert.Equal(72, Marshal.SizeOf<HidButtonCaps>());
+
         Assert.Equal(0, Marshal.OffsetOf<HidCaps>(nameof(HidCaps.Usage)).ToInt32());
         Assert.Equal(2, Marshal.OffsetOf<HidCaps>(nameof(HidCaps.UsagePage)).ToInt32());
         Assert.Equal(8, Marshal.OffsetOf<HidCaps>(nameof(HidCaps.FeatureReportByteLength)).ToInt32());

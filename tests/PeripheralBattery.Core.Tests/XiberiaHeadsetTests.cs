@@ -50,6 +50,150 @@ public class XiberiaHeadsetTests
     }
 
     [Fact]
+    public void Official_N_sums_every_item_and_accepts_a_missing_list()
+    {
+        Assert.Equal(new XiberiaReport(false, null), XiberiaHeadset.ReportFromItems(false, null));
+        Assert.Equal(new XiberiaReport(true, null), XiberiaHeadset.ReportFromItems(true, null));
+        Assert.Equal(new XiberiaReport(true, null), XiberiaHeadset.ReportFromItems(true, []));
+
+        var full = new XiberiaReportItem[]
+        {
+            new(8, 60),
+            new(1, 16),
+            new(8, 1),
+        };
+        var summed = XiberiaHeadset.ReportFromItems(true, full);
+        Assert.Equal(new XiberiaReport(true, XiberiaHeadset.ReportBits), summed);
+        Assert.True(Matches(0x36F9, 0xF008, input: summed));
+        Assert.True(Matches(0x36F9, 0xF014, input: summed));
+
+        var shortOfPadding = XiberiaHeadset.ReportFromItems(true, [new(8, 60), new(1, 16)]);
+        Assert.Equal(new XiberiaReport(true, 496), shortOfPadding);
+        Assert.False(Matches(0x36F9, 0xF008, input: shortOfPadding));
+        Assert.False(Matches(0x36F9, 0xF014, input: shortOfPadding, output: summed));
+    }
+
+    [Fact]
+    public void Partial_caps_keep_report_85_that_value_caps_alone_would_drop()
+    {
+        var shortValues = XiberiaHeadset.DescribeCaps(Caps(Value(85, 8, 62)), None);
+        Assert.Equal(new XiberiaReport(true, null), shortValues);
+        Assert.True(Matches(0x36F9, 0xF008, input: shortValues, output: Absent, hasOutputReports: false));
+        Assert.False(Matches(0x36F9, 0xF014, input: shortValues, output: Absent, hasOutputReports: false));
+
+        var buttonOnly = XiberiaHeadset.DescribeCaps(None, Caps(Button(85)));
+        Assert.Equal(new XiberiaReport(true, null), buttonOnly);
+        Assert.True(Matches(0x36F9, 0xF008, input: buttonOnly, output: Absent, hasOutputReports: false));
+        Assert.True(Matches(0x36F9, 0xF009, input: buttonOnly, output: Absent, hasOutputReports: false));
+        Assert.False(Matches(0x36F9, 0xF008, usagePage: 0x0001, usage: 0x0000, input: buttonOnly, output: Absent, hasOutputReports: false));
+        Assert.False(Matches(0x36F9, 0xF014, input: buttonOnly, output: Absent, hasOutputReports: false));
+
+        var valuesAndButtons = XiberiaHeadset.DescribeCaps(Caps(Value(85, 8, 62)), Caps(Button(85)));
+        Assert.Equal(new XiberiaReport(true, null), valuesAndButtons);
+        Assert.True(Matches(0x36F9, 0xF002, input: valuesAndButtons, output: Absent, hasOutputReports: false));
+
+        var exact = XiberiaHeadset.DescribeCaps(Caps(Value(85, 8, 63), Value(85, 8, 63, alias: true)), None);
+        Assert.Equal(new XiberiaReport(true, XiberiaHeadset.ReportBits), exact);
+        var wide = XiberiaHeadset.DescribeCaps(Caps(Value(85, 8, 64)), None);
+        Assert.Equal(new XiberiaReport(true, 512), wide);
+        Assert.False(Matches(0x36F9, 0xF008, input: wide));
+        var valuePlusButton = XiberiaHeadset.DescribeCaps(Caps(Value(85, 8, 63)), Caps(Button(85)));
+        Assert.True(valuePlusButton.Present);
+        Assert.NotNull(valuePlusButton.BitCount);
+        Assert.NotEqual(XiberiaHeadset.ReportBits, valuePlusButton.BitCount);
+        Assert.False(Matches(0x36F9, 0xF008, input: valuePlusButton));
+        Assert.Equal(new XiberiaReport(false, null), XiberiaHeadset.DescribeCaps(Caps(Value(1, 8, 63)), Caps(Button(1))));
+    }
+
+    [Fact]
+    public void Usage_and_output_reports_belong_to_the_top_level_collection()
+    {
+        Assert.True(XiberiaHeadset.MatchesOfficialCollection(
+            0x36F9,
+            0xF008,
+            null,
+            XiberiaHeadset.UsagePage,
+            XiberiaHeadset.Usage,
+            None,
+            Caps(Button(85)),
+            Caps(Value(1, 8, 1, link: 1)),
+            None));
+        Assert.True(XiberiaHeadset.MatchesOfficialCollection(
+            0x36F9,
+            0xF009,
+            null,
+            XiberiaHeadset.UsagePage,
+            XiberiaHeadset.Usage,
+            None,
+            Caps(Button(85)),
+            None,
+            Caps(Button(1, link: 1))));
+        Assert.False(XiberiaHeadset.MatchesOfficialCollection(
+            0x36F9,
+            0xF008,
+            null,
+            XiberiaHeadset.UsagePage,
+            XiberiaHeadset.Usage,
+            None,
+            Caps(Button(85)),
+            Caps(Value(1, 8, 1)),
+            None));
+        Assert.False(XiberiaHeadset.MatchesOfficialCollection(
+            0x36F9,
+            0xF008,
+            null,
+            0x0001,
+            0x0000,
+            None,
+            Caps(Button(85, link: 1)),
+            None,
+            None));
+        Assert.False(XiberiaHeadset.MatchesOfficialCollection(
+            0x36F9,
+            0xF014,
+            null,
+            XiberiaHeadset.UsagePage,
+            XiberiaHeadset.Usage,
+            None,
+            Caps(Button(85)),
+            Caps(Value(85, 8, 63, link: 1)),
+            None));
+        Assert.True(XiberiaHeadset.MatchesOfficialCollection(
+            0x36F9,
+            0xF014,
+            null,
+            0x0001,
+            0x0000,
+            Caps(Value(85, 8, 63)),
+            None,
+            None,
+            Caps(Button(85))));
+        Assert.False(XiberiaHeadset.MatchesOfficialCollection(
+            0x36F9,
+            0xF008,
+            null,
+            XiberiaHeadset.UsagePage,
+            XiberiaHeadset.Usage,
+            Caps(Value(85, 8, 63)),
+            None,
+            new XiberiaCapList(false, null),
+            new XiberiaCapList(false, null)));
+    }
+
+    [Fact]
+    public void A_failed_first_shared_open_is_the_busy_row()
+    {
+        var missed = XiberiaHeadset.SharedOpen(opened: false);
+        Assert.False(missed.Continue);
+        Assert.True(missed.Busy);
+        Assert.Equal(XiberiaHeadset.NoteInterfaceBusy, "接口被占用。请先退出官方驱动，再点刷新。");
+
+        var opened = XiberiaHeadset.SharedOpen(opened: true);
+        Assert.True(opened.Continue);
+        Assert.False(opened.Busy);
+    }
+
+    [Fact]
     public void Shared_4801_is_split_by_the_official_product_name()
     {
         Assert.True(XiberiaHeadset.IsCandidate(0x10D6, 0x4801));
@@ -314,6 +458,16 @@ public class XiberiaHeadsetTests
         Assert.Contains(devices, device => device.DisplayName == "XIBERIA WG500S" && device.BatteryPercent == 55 && device.Charging is null && !PillComposition.ShowCharging(device.Charging));
         Assert.DoesNotContain(devices, device => device.DisplayName is "T7" or "CROCIRIS T7" or "K03S" or "WG500S" or "西伯利亚");
     }
+
+    private static XiberiaCapList None => new(true, []);
+
+    private static XiberiaCapList Caps(params XiberiaCap[] caps) => new(true, caps);
+
+    private static XiberiaCap Value(byte reportId, int size, int count, ushort link = 0, bool alias = false) =>
+        new(reportId, size, count, link, false, alias);
+
+    private static XiberiaCap Button(byte reportId, ushort link = 0) =>
+        new(reportId, 0, 0, link, true, false);
 
     private static bool Matches(
         int vendorId,
