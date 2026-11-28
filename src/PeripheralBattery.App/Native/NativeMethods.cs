@@ -226,6 +226,9 @@ internal static class NativeMethods
     [DllImport("hid.dll")]
     public static extern int HidP_GetValueCaps(int reportType, [Out] HidValueCaps[] caps, ref ushort count, IntPtr preparsed);
 
+    [DllImport("hid.dll")]
+    public static extern int HidP_GetButtonCaps(int reportType, [Out] HidButtonCaps[] caps, ref ushort count, IntPtr preparsed);
+
     [DllImport("hid.dll", CharSet = CharSet.Ansi)]
     public static extern int HidP_GetUsageValue(int reportType, ushort usagePage, ushort linkCollection, ushort usage, out uint usageValue, IntPtr preparsed, byte[] report, uint reportLength);
 

@@ -10,6 +10,9 @@ namespace PeripheralBattery.Sources;
 /// Opens the collection that carries report 85 and reads command 9, then
 /// command 1 when that reply has no 0–100 level. Charging follows the hub
 /// table's wired or wireless mark for that id. The reply has no charge byte.
+/// Report 85 is the top-level collection's value caps and button caps.
+/// A partial cap list still counts. The first shared open of a candidate
+/// that fails is the busy row.
 /// </summary>
 internal sealed class XiberiaHeadsetSource : IVendorBatterySource
 {
@@ -77,8 +80,12 @@ internal sealed class XiberiaHeadsetSource : IVendorBatterySource
     {
         openFailed = false;
         var looked = Open(path, exclusive: false);
-        if (!Usable(looked))
+        var first = XiberiaHeadset.SharedOpen(Usable(looked));
+        if (!first.Continue)
+        {
+            openFailed = first.Busy;
             return null;
+        }
 
         try
         {
@@ -144,18 +151,18 @@ internal sealed class XiberiaHeadsetSource : IVendorBatterySource
             var caps = new HidCaps();
             if (NativeMethods.HidP_GetCaps(preparsed, ref caps) != NativeMethods.HidPStatusSuccess)
                 return false;
-            var input = Describe(preparsed, NativeMethods.HidPInput, caps.NumberInputValueCaps);
-            var output = Describe(preparsed, NativeMethods.HidPOutput, caps.NumberOutputValueCaps);
-            var hasOutput = caps.NumberOutputValueCaps > 0 || caps.NumberOutputButtonCaps > 0 || caps.OutputReportByteLength > 0;
-            return XiberiaHeadset.IsCollection(
+            // P() checks usage and output reports on the same top-level
+            // collection. Child collections stay out of both.
+            return XiberiaHeadset.MatchesOfficialCollection(
                 attributes.VendorId,
                 attributes.ProductId,
                 ReadProduct(handle),
                 caps.UsagePage,
                 caps.Usage,
-                input,
-                output,
-                hasOutput);
+                ReadCaps(preparsed, NativeMethods.HidPInput, caps.NumberInputValueCaps, buttons: false),
+                ReadCaps(preparsed, NativeMethods.HidPInput, caps.NumberInputButtonCaps, buttons: true),
+                ReadCaps(preparsed, NativeMethods.HidPOutput, caps.NumberOutputValueCaps, buttons: false),
+                ReadCaps(preparsed, NativeMethods.HidPOutput, caps.NumberOutputButtonCaps, buttons: true));
         }
         finally
         {
@@ -163,30 +170,54 @@ internal sealed class XiberiaHeadsetSource : IVendorBatterySource
         }
     }
 
-    private static XiberiaReport Describe(IntPtr preparsed, int reportType, ushort count)
+    private static XiberiaCapList ReadCaps(IntPtr preparsed, int reportType, ushort count, bool buttons)
     {
-        if (count == 0 || count > 256)
+        if (count == 0)
+            return new(true, []);
+        // An unread list must not look empty: N() would accept report 85
+        // for an empty item list, and P() would treat output reports as absent.
+        if (count > 256)
             return new(false, null);
-        var caps = new HidValueCaps[count];
-        var copied = count;
-        if (NativeMethods.HidP_GetValueCaps(reportType, caps, ref copied, preparsed) != NativeMethods.HidPStatusSuccess)
-            return new(false, null);
-        long bits = 0;
-        var present = false;
-        var limit = Math.Min(copied, caps.Length);
-        for (var i = 0; i < limit; i++)
+        if (buttons)
         {
-            if (caps[i].ReportId != XiberiaHeadset.ReportId)
-                continue;
-            present = true;
-            bits += (long)caps[i].BitSize * caps[i].ReportCount;
+            var caps = new HidButtonCaps[count];
+            var copied = count;
+            if (NativeMethods.HidP_GetButtonCaps(reportType, caps, ref copied, preparsed) != NativeMethods.HidPStatusSuccess)
+                return new(false, null);
+            var limit = Math.Min(copied, caps.Length);
+            var list = new XiberiaCap[limit];
+            for (var i = 0; i < limit; i++)
+            {
+                list[i] = new XiberiaCap(
+                    caps[i].ReportId,
+                    0,
+                    0,
+                    caps[i].LinkCollection,
+                    IsButton: true,
+                    IsAlias: caps[i].IsAlias != 0);
+            }
+
+            return new(true, list);
         }
 
-        if (!present)
+        var values = new HidValueCaps[count];
+        var valueCopied = count;
+        if (NativeMethods.HidP_GetValueCaps(reportType, values, ref valueCopied, preparsed) != NativeMethods.HidPStatusSuccess)
             return new(false, null);
-        if (bits > int.MaxValue)
-            return new(true, int.MaxValue);
-        return new(true, (int)bits);
+        var valueLimit = Math.Min(valueCopied, values.Length);
+        var valueList = new XiberiaCap[valueLimit];
+        for (var i = 0; i < valueLimit; i++)
+        {
+            valueList[i] = new XiberiaCap(
+                values[i].ReportId,
+                values[i].BitSize,
+                values[i].ReportCount,
+                values[i].LinkCollection,
+                IsButton: false,
+                IsAlias: values[i].IsAlias != 0);
+        }
+
+        return new(true, valueList);
     }
 
     private static List<RawDeviceReading> PreferLevels(List<RawDeviceReading> readings)

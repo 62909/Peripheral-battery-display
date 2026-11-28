@@ -2,10 +2,46 @@ namespace PeripheralBattery.Core;
 
 /// <summary>
 /// One input or output report on a Xiberia headset collection.
-/// <paramref name="BitCount"/> is null when the report id is present and the
-/// official filter has no item list to sum. A known count has to be 504.
+/// <paramref name="BitCount"/> is null when report id 85 is present and
+/// official <c>N()</c> has nothing complete to sum: the item list is missing,
+/// empty, or only partly visible. A complete list is the sum of every item's
+/// <c>reportSize * reportCount</c>, including buttons, arrays, and padding,
+/// and that sum has to be 504.
 /// </summary>
 public readonly record struct XiberiaReport(bool Present, int? BitCount);
+
+/// <summary>
+/// One item from a HID report, the way official <c>N()</c> reads
+/// <c>reportSize</c> and <c>reportCount</c>.
+/// </summary>
+public readonly record struct XiberiaReportItem(int ReportSize, int ReportCount);
+
+/// <summary>
+/// One Windows value cap or button cap. Button and array caps do not carry
+/// <c>reportSize</c>, so <see cref="BitSize"/> is unused for them. Padding
+/// items never appear here. <see cref="LinkCollection"/> <c>0</c> is the
+/// top-level collection that official <c>P()</c> inspects.
+/// </summary>
+public readonly record struct XiberiaCap(
+    byte ReportId,
+    int BitSize,
+    int ReportCount,
+    ushort LinkCollection,
+    bool IsButton,
+    bool IsAlias);
+
+/// <summary>
+/// Caps from one <c>HidP_GetValueCaps</c> or <c>HidP_GetButtonCaps</c> call.
+/// <see cref="Known"/> is false when the call did not return the list.
+/// An unread list is not the empty item list that official <c>N()</c> accepts.
+/// </summary>
+public readonly record struct XiberiaCapList(bool Known, XiberiaCap[]? Caps);
+
+/// <summary>
+/// What to do after the first shared open of a VID/PID candidate.
+/// A failed open is the busy row. A live handle continues into the report check.
+/// </summary>
+public readonly record struct XiberiaSharedOpen(bool Continue, bool Busy);
 
 /// <summary>
 /// Headset battery path from the public XIBERIA HUB
@@ -105,6 +141,131 @@ public static class XiberiaHeadset
                 ReportOk(input) && ReportOk(output),
             _ => false,
         };
+    }
+
+    /// <summary>
+    /// Official <c>N()</c> for one report id that the caller already found,
+    /// or did not. A null or empty <paramref name="items"/> list accepts the
+    /// id. Otherwise the sum of <c>reportSize * reportCount</c> is kept, and
+    /// only 504 passes <see cref="IsCollection"/>.
+    /// </summary>
+    public static XiberiaReport ReportFromItems(bool present, XiberiaReportItem[]? items)
+    {
+        if (!present)
+            return new(false, null);
+        if (items is null || items.Length == 0)
+            return new(true, null);
+        long bits = 0;
+        foreach (var item in items)
+        {
+            bits += (long)item.ReportSize * item.ReportCount;
+            if (bits > int.MaxValue)
+                return new(true, int.MaxValue);
+        }
+
+        return new(true, (int)bits);
+    }
+
+    /// <summary>
+    /// Windows view of official <c>N()</c> for report id 85 on the top-level
+    /// collection. Value caps can be summed. Button and array caps cannot, and
+    /// padding is absent, so a short sum is a partial list: the id is present
+    /// and the bit count stays unset. A sum that is already past 504, or a
+    /// 504-bit value list with extra button bits, cannot be padded back to 504.
+    /// </summary>
+    public static XiberiaReport DescribeCaps(XiberiaCapList values, XiberiaCapList buttons)
+    {
+        var sawReport = false;
+        var sawUnsized = false;
+        long bits = 0;
+        if (values.Known && values.Caps is { } valueCaps)
+        {
+            foreach (var cap in valueCaps)
+            {
+                if (cap.LinkCollection != TopLinkCollection || cap.ReportId != ReportId)
+                    continue;
+                sawReport = true;
+                if (cap.IsAlias || cap.BitSize < 0 || cap.ReportCount < 0)
+                    continue;
+                bits += (long)cap.BitSize * cap.ReportCount;
+                if (bits < 0 || bits > int.MaxValue)
+                    bits = int.MaxValue;
+            }
+        }
+
+        if (buttons.Known && buttons.Caps is { } buttonCaps)
+        {
+            foreach (var cap in buttonCaps)
+            {
+                if (cap.LinkCollection != TopLinkCollection || cap.ReportId != ReportId)
+                    continue;
+                sawReport = true;
+                if (!cap.IsAlias)
+                    sawUnsized = true;
+            }
+        }
+
+        if (!sawReport)
+            return new(false, null);
+        // An unread cap array is not a complete item list, and neither is a
+        // button, an array, or a value sum short of 504. Missing items can
+        // only add bits, so a short sum stays unset instead of being rejected.
+        if (!values.Known || !buttons.Known || bits < ReportBits)
+            return new(true, null);
+        if (sawUnsized || bits != ReportBits)
+        {
+            var counted = bits == ReportBits ? (long)ReportBits + 1 : bits;
+            if (counted > int.MaxValue)
+                return new(true, int.MaxValue);
+            return ReportFromItems(true, [new XiberiaReportItem((int)counted, 1)]);
+        }
+
+        return ReportFromItems(true, [new XiberiaReportItem(ReportBits, 1)]);
+    }
+
+    /// <summary>
+    /// Official <c>P()</c> on one top-level HID collection. Usage and output
+    /// reports both belong to that collection. Nested link collections are
+    /// children; <c>P()</c> does not walk them, and neither does this.
+    /// </summary>
+    public static bool MatchesOfficialCollection(
+        int vendorId,
+        int productId,
+        string? productName,
+        int usagePage,
+        int usage,
+        XiberiaCapList inputValues,
+        XiberiaCapList inputButtons,
+        XiberiaCapList outputValues,
+        XiberiaCapList outputButtons) =>
+        IsCollection(
+            vendorId,
+            productId,
+            productName,
+            usagePage,
+            usage,
+            DescribeCaps(inputValues, inputButtons),
+            DescribeCaps(outputValues, outputButtons),
+            CollectionHasOutputReports(outputValues, outputButtons));
+
+    /// <summary>
+    /// The first shared <c>CreateFile</c> of a VID/PID candidate. The official
+    /// client holds the interface exclusive, so a failure here is
+    /// <see cref="NoteInterfaceBusy"/> rather than a missing headset.
+    /// </summary>
+    public static XiberiaSharedOpen SharedOpen(bool opened) =>
+        opened ? new XiberiaSharedOpen(true, false) : new XiberiaSharedOpen(false, true);
+
+    /// <summary>
+    /// True when this top-level collection has any output report. Caps on a
+    /// child collection do not count. An unread cap list is not an empty one,
+    /// so input-only is not assumed.
+    /// </summary>
+    public static bool CollectionHasOutputReports(XiberiaCapList values, XiberiaCapList buttons)
+    {
+        if (AnyTopCollectionCap(values) || AnyTopCollectionCap(buttons))
+            return true;
+        return !values.Known || !buttons.Known;
     }
 
     /// <summary>
@@ -222,8 +383,23 @@ public static class XiberiaHeadset
         return new(AtkExchangeStatus.NoReply, default);
     }
 
+    private const int TopLinkCollection = 0;
+
     private static bool ReportOk(XiberiaReport report) =>
         report.Present && report.BitCount is null or ReportBits;
+
+    private static bool AnyTopCollectionCap(XiberiaCapList list)
+    {
+        if (!list.Known || list.Caps is null)
+            return false;
+        foreach (var cap in list.Caps)
+        {
+            if (cap.LinkCollection == TopLinkCollection)
+                return true;
+        }
+
+        return false;
+    }
 
     private static Model? ModelFor(int vendorId, int productId, string? productName)
     {
