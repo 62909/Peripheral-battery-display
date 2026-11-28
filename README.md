@@ -146,6 +146,6 @@ dotnet publish src/PeripheralBattery.App/PeripheralBattery.App.csproj -c Release
 
 验证环境是 Linux，.NET SDK 8.0.428，没有蓝牙外设，也没有 Windows 桌面，所以设备列表和任务栏上的闪电没有在真机上点过。列表和电量块用的是同一条闪电，测试断言的是这一格要不要画。
 
-- `dotnet test -c Release`：充电标志这一组覆盖：西伯利亚有线（T7 `36F9:F014`、名字符合的 K03S）读到百分比时，列表和电量块都画闪电；2.4G 的 T7 `36F9:F008` 和表里 unknown 的不画；电量超范围仍是未知，不画闪电。EVISION `320F:5055`、BITMOUSE 有线、COMPX 有线、HECHI 4423、HFD 有线在电量 0–100 时都画闪电，官方充电字段是 0 也画。2.4G 仍只看官方字段：EVISION `320F:5088`、BITMOUSE 接收器、COMPX 接收器和星闪、HECHI 接收器、HFD 2.4G 官方说不在充就不画，说在充才画。连接方式未知的不靠这条补闪电。华兮 `38EE:0022` 仍只看官方充电字节。HFD 在充且没有百分比时，列表保留说明、电量写未知、不画闪电。原先的 GATT / HID / 合并、任务栏位置和西伯利亚匹配仍在。
+- `dotnet test -c Release`：178 项通过。充电标志这一组覆盖：西伯利亚有线（T7 `36F9:F014`、名字符合的 K03S）读到百分比时，列表和电量块都画闪电；2.4G 的 T7 `36F9:F008` 和表里 unknown 的不画；电量超范围仍是未知，不画闪电。EVISION `320F:5055`、BITMOUSE 有线、COMPX 有线、HECHI 4423、HFD 有线在电量 0–100 时都画闪电，官方充电字段是 0 也画。2.4G 仍只看官方字段：EVISION `320F:5088`、BITMOUSE 接收器、COMPX 接收器和星闪、HECHI 接收器、HFD 2.4G 官方说不在充就不画，说在充才画。连接方式未知的不靠这条补闪电。华兮 `38EE:0022` 仍只看官方充电字节。HFD 在充且没有百分比时，列表保留说明、电量写未知、不画闪电。原先的 GATT / HID / 合并、任务栏位置和西伯利亚匹配仍在。
 - `dotnet build src/PeripheralBattery.App/PeripheralBattery.App.csproj -c Release`：成功，0 个警告。设备列表的闪电和任务栏电量块在这个工程里。
 - 对照了当天仍在线上的 hub.atk.pro 3.2.34：EVISION、BITMOUSE、COMPX、HECHI、HFD 的公开协议都分得清有线和 2.4G。有线并且已经显示出 0–100 的电量时画闪电，官方充电字段是 0 也画；2.4G 仍只看官方字段。华兮 SDK 的 `mouseBatteryCharging` 仍是独立字段，`38EE:0022` 不按有线处理。没有重新打单文件安装包，也没有接上设备。托盘图标仍只画已经读到的最低电量。
