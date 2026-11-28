@@ -9,6 +9,7 @@ namespace PeripheralBattery.Sources;
 /// ATK HUB 3.2.34 protocols that publish a battery query.
 /// BITMOUSE, COMPX, and HECHI are separate mouse collections.
 /// HFD is a keyboard collection limited to the product ids on that controller.
+/// EVISION is the <c>0x320F</c> keyboard controller (wired <c>0x5055</c>, 2.4G <c>0x5088</c>).
 /// A usage page alone is not enough: BITYUAN keyboards share FF60 and are not queried.
 /// </summary>
 internal sealed class AtkOfficialSource : IVendorBatterySource
@@ -19,7 +20,7 @@ internal sealed class AtkOfficialSource : IVendorBatterySource
             "atk-bitmouse",
             DeviceKind.Mouse,
             AtkBitmouse.IsCollection,
-            (link, input, output, token) => AtkBitmouse.ReadBattery(link, input, output, token),
+            (link, input, output, _, token) => AtkBitmouse.ReadBattery(link, input, output, token),
             static status => status switch
             {
                 AtkExchangeStatus.LevelOutOfRange => AtkBitmouse.NoteLevelOutOfRange,
@@ -32,7 +33,7 @@ internal sealed class AtkOfficialSource : IVendorBatterySource
             "atk-compx",
             DeviceKind.Mouse,
             AtkCompx.IsCollection,
-            (link, input, output, token) => AtkCompx.ReadBattery(link, input, output, token),
+            (link, input, output, _, token) => AtkCompx.ReadBattery(link, input, output, token),
             static status => status switch
             {
                 AtkExchangeStatus.LevelOutOfRange => AtkCompx.NoteLevelOutOfRange,
@@ -43,7 +44,7 @@ internal sealed class AtkOfficialSource : IVendorBatterySource
             "atk-hechi",
             DeviceKind.Mouse,
             AtkHechi.IsCollection,
-            (link, input, output, token) => AtkHechi.ReadBattery(link, input, output, token),
+            (link, input, output, _, token) => AtkHechi.ReadBattery(link, input, output, token),
             static status => status switch
             {
                 AtkExchangeStatus.LevelOutOfRange => AtkHechi.NoteLevelOutOfRange,
@@ -54,13 +55,24 @@ internal sealed class AtkOfficialSource : IVendorBatterySource
             "atk-hfd",
             DeviceKind.Keyboard,
             AtkHfdKeyboard.IsCollection,
-            (link, input, output, token) => AtkHfdKeyboard.ReadBattery(link, input, output, token),
+            (link, input, output, _, token) => AtkHfdKeyboard.ReadBattery(link, input, output, token),
             static status => status switch
             {
                 AtkExchangeStatus.ChargingWithoutLevel => AtkHfdKeyboard.NoteChargingWithoutLevel,
                 AtkExchangeStatus.LevelOutOfRange => AtkHfdKeyboard.NoteLevelOutOfRange,
                 AtkExchangeStatus.SendFailed => AtkHfdKeyboard.NoteSendFailed,
                 _ => AtkHfdKeyboard.NoteNoReply,
+            }),
+        new(
+            "atk-evision",
+            DeviceKind.Keyboard,
+            AtkEvisionKeyboard.IsCollection,
+            (link, input, output, productId, token) => AtkEvisionKeyboard.ReadBattery(link, input, output, productId, token),
+            static status => status switch
+            {
+                AtkExchangeStatus.LevelOutOfRange => AtkEvisionKeyboard.NoteLevelOutOfRange,
+                AtkExchangeStatus.SendFailed => AtkEvisionKeyboard.NoteSendFailed,
+                _ => AtkEvisionKeyboard.NoteNoReply,
             }),
     ];
 
@@ -94,7 +106,7 @@ internal sealed class AtkOfficialSource : IVendorBatterySource
                 if (path is null)
                     continue;
                 var ids = DeviceIdentity.ParseVidPid(path);
-                if (ids.VendorId is not int vid || vid != AtkBitmouse.VendorId || ids.ProductId is not int pid)
+                if (ids.VendorId is not int vid || ids.ProductId is not int pid || !AcceptsVendor(vid))
                     continue;
                 try
                 {
@@ -164,7 +176,7 @@ internal sealed class AtkOfficialSource : IVendorBatterySource
                     return null;
                 var name = ReadProduct(handle);
                 using var link = new AkkoHuaxiLink(handle, caps.InputReportByteLength, cancellationToken);
-                var result = protocol.Read(link, caps.InputReportByteLength, caps.OutputReportByteLength, cancellationToken);
+                var result = protocol.Read(link, caps.InputReportByteLength, caps.OutputReportByteLength, productId, cancellationToken);
                 var percent = result.Status == AtkExchangeStatus.Ok ? result.Battery.Percent : null;
                 var charging = result.Status is AtkExchangeStatus.Ok or AtkExchangeStatus.ChargingWithoutLevel
                     ? result.Battery.Charging
@@ -268,6 +280,9 @@ internal sealed class AtkOfficialSource : IVendorBatterySource
         return NativeMethods.CreateFile(path, access, share, IntPtr.Zero, NativeMethods.OpenExisting, NativeMethods.FileFlagOverlapped, IntPtr.Zero);
     }
 
+    private static bool AcceptsVendor(int vendorId) =>
+        vendorId == AtkBitmouse.VendorId || vendorId == AtkEvisionKeyboard.VendorId;
+
     private static bool Usable(IntPtr handle) =>
         handle != IntPtr.Zero && handle != NativeMethods.InvalidHandle;
 
@@ -312,7 +327,7 @@ internal sealed class AtkOfficialSource : IVendorBatterySource
             string id,
             DeviceKind kind,
             Func<int, int, int, int, bool> matches,
-            Func<IAtkReportLink, int, int, CancellationToken, AtkExchangeResult> read,
+            Func<IAtkReportLink, int, int, int, CancellationToken, AtkExchangeResult> read,
             Func<AtkExchangeStatus, string> note)
         {
             Id = id;
@@ -325,7 +340,7 @@ internal sealed class AtkOfficialSource : IVendorBatterySource
         public string Id { get; }
         public DeviceKind Kind { get; }
         public Func<int, int, int, int, bool> Matches { get; }
-        public Func<IAtkReportLink, int, int, CancellationToken, AtkExchangeResult> Read { get; }
+        public Func<IAtkReportLink, int, int, int, CancellationToken, AtkExchangeResult> Read { get; }
         public Func<AtkExchangeStatus, string> Note { get; }
     }
 }
