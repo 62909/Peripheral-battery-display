@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using PeripheralBattery;
 using PeripheralBattery.Core;
 
@@ -143,15 +144,37 @@ public partial class DeviceListWindow : Window
                 Margin = new Thickness(0, 2, 0, 0),
             });
         }
-        var battery = new TextBlock
+        var tone = palette.Tone(BatteryMath.Tone(device.BatteryPercent));
+        var cell = DeviceListComposition.Describe(device);
+        var battery = new StackPanel
         {
-            Text = UiText.BatteryLabel(device.BatteryPercent),
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 0, 0),
+        };
+        battery.Children.Add(new TextBlock
+        {
+            Text = cell.Text,
             FontSize = 14,
             FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(10, 0, 0, 0),
-            Foreground = palette.Tone(BatteryMath.Tone(device.BatteryPercent)),
-        };
+            Foreground = tone,
+        });
+        if (cell.Bolt)
+        {
+            battery.Children.Add(new Path
+            {
+                Data = DeviceGlyph.Bolt,
+                Fill = tone,
+                Width = PillComposition.BoltWidthDip,
+                Height = PillComposition.BoltHeightDip,
+                Stretch = Stretch.Uniform,
+                Margin = new Thickness(PillComposition.TextBoltGapDip, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible = false,
+                SnapsToDevicePixels = true,
+            });
+        }
         Grid.SetColumn(stack, 1);
         Grid.SetColumn(battery, 2);
         grid.Children.Add(glyph);

@@ -35,9 +35,6 @@ internal static class UiText
     public static string NameLabel(string? name) =>
         string.IsNullOrWhiteSpace(name) ? Unknown : name;
 
-    public static string BatteryLabel(int? percent) =>
-        percent is int value ? $"{value}%" : Unknown;
-
     public static string TrayTip(int? percent, int count, bool demo)
     {
         var head = demo ? "外设电量（演示）" : "外设电量";
