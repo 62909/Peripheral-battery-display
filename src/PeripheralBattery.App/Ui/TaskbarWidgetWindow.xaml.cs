@@ -10,8 +10,6 @@ namespace PeripheralBattery.Ui;
 
 public partial class TaskbarWidgetWindow : Window
 {
-    private static readonly Geometry BoltShape = CreateBolt();
-
     private AppController? _controller;
     private bool _placing;
     private bool _dragging;
@@ -128,7 +126,7 @@ public partial class TaskbarWidgetWindow : Window
         {
             group.Children.Add(new Path
             {
-                Data = BoltShape,
+                Data = DeviceGlyph.Bolt,
                 Fill = tone,
                 Width = PillComposition.BoltWidthDip,
                 Height = PillComposition.BoltHeightDip,
@@ -154,13 +152,6 @@ public partial class TaskbarWidgetWindow : Window
         }
 
         return best;
-    }
-
-    private static Geometry CreateBolt()
-    {
-        var geometry = PathGeometry.CreateFromGeometry(Geometry.Parse(PillMarks.Bolt));
-        geometry.Freeze();
-        return geometry;
     }
 
     private void OnLeftDown(object sender, MouseButtonEventArgs e)
