@@ -13,5 +13,6 @@ internal static class VendorSourceRegistry
     {
         yield return new AkkoHuaxiSource();
         yield return new AtkOfficialSource();
+        yield return new XiberiaHeadsetSource();
     }
 }

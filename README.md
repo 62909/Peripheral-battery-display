@@ -83,11 +83,13 @@ ATK 走官方网页驱动 [hub.atk.pro](https://hub.atk.pro/)（对照的是 hub
 - **HFD 键盘**（控制器 `ts`，产品 ID `4382`、`4383`、`4657`、`4429`、`4430`、`4433`、`4434`）：`373B`，用法页 `FF60` 用法 `0061`，报告号 0，32 字节。命令是 `2 150 36`，后面依次是电量字节和充电字节。充电字节为 0 时，电量字节才当作百分比；不是 0 时官方驱动不给出百分比，这里也不编。
 - **EVISION 键盘**（`keyboard-info.util` 里的控制器，`solutionProvider: EVISION`）：厂商 `320F`，用法页 `FF1C` 用法 `0092`，产品 ID `5055`（有线，63 字节）和 `5088`（2.4G，31 字节）。这两只 ID 是同一控制器上多款键盘共用的，包括 V75X、V75 PRO、V87、Kafka 等。报告号 4。命令 `power_info` 是 26：请求码小端写在第 0–1 字节，第 2 字节是 26，其余为 0。应答第 2 字节是 255 算失败；成功时从偏移 7 取数据，第 0 字节是电量，第 1 字节为 2 才算在充。官方会把大于 100 的数改成 100，这里不改。名称用 HID 产品字符串。蓝牙官方驱动不认，这里也不读。
 
+西伯利亚耳机走官方网页驱动 [hub.xiberia.net](https://hub.xiberia.net/)（XIBERIA HUB，2026-11-28 对照的是 `selectedHeadsetSession-DRlw0-zg.js`、`deviceConnectionStore-llQZnRTG.js`、`device-core-ISUoM2Rb.js`）。只读 `legacy-55` / `usb-audio-k06s` 这一族的 2.4G 接收器和有线集合，厂商 `36F9`、`37D3`、`10D6`，报告号 85，63 字节。命令 9 的帧是 `10 09 01 00…`，去掉帧头后第 0 字节是百分比。命令 1 的帧是 `10 01 00…`，状态第 0 字节不是 0、第 3 字节不超过 100 才采用。大于 100 保持未知。这条协议没有充电字段，不推断是否在充。名称用 HID 产品字符串。`10D6:4801` 上 K03S 有线和 WG500S 靠官方产品名区分，对不上就不读。T10 有线（`36F9:D003`）官方没有电量命令，不读。蓝牙仍走原来的 GATT。
+
 BITYUAN 键盘（RS6、RS7、ATK68、ATK75、EDGE 等）用法页也是 `FF60:0061`，但官方 `getPowerInfo` 是空的，不会拿 HFD 的命令去套。HOLTEK 鼠标（用法页 `FF10`，例如一部分 X1、U2 Pro、A9 Pro）的 `getPowerInfo` 在这份驱动里没有实现，也不读。ATK V75X Ultra 是另一只键盘（`373B`，`FF60:0061`），不走 EVISION 这一条。同一份 EVISION 过滤器里还有一些 `373B` 加 `FF1C:0092` 的型号，有线和 2.4G 要靠产品名那一行区分，这里没有并进来。
 
 ## 读不到什么
 
-- 罗技 HID++、雷蛇，以及上面这只鼠标以外的 AKKO 型号。ATK 只读上一节列出的五套官方协议，BITYUAN 键盘和 HOLTEK 鼠标不在内。扩展点在 `src/PeripheralBattery.App/Sources/VendorSourceRegistry.cs`。读不到就显示未知。
+- 罗技 HID++、雷蛇，以及上面这只鼠标以外的 AKKO 型号。ATK 只读上一节列出的五套官方协议，BITYUAN 键盘和 HOLTEK 鼠标不在内。西伯利亚只读上一节的耳机族，T10 有线、鼠标键盘，以及官方表里没有电量帧的型号不在内；这条协议也没有充电状态。扩展点在 `src/PeripheralBattery.App/Sources/VendorSourceRegistry.cs`。读不到就显示未知。
 - 未配对、未连接，或驱动不报告电量的设备。
 - 电脑自己的电池。
 - Windows 有时会在设备断开后仍保留节点和上一次的电量字节。列表可能短暂留下这台设备。
@@ -142,6 +144,6 @@ dotnet publish src/PeripheralBattery.App/PeripheralBattery.App.csproj -c Release
 
 验证环境是 Linux，.NET SDK 8.0.428，没有蓝牙外设，也没有 Windows 桌面，所以托盘图标和任务栏拖动没有在真机上点过。
 
-- `dotnet test -c Release`：152 项通过。覆盖 GATT / HID / Windows 电量字节的解析、未知和冲突、设备分类和 VID/PID 命名、多来源合并、最低电量、任务栏比例在四条边上的位置、自动隐藏和全屏时是否显示、设置默认关闭开机启动、身份覆盖文件，以及 ATK 五套官方电量帧（BITMOUSE、COMPX、HECHI、HFD、EVISION）的命令、校验和 0–100 边界。
+- `dotnet test -c Release`：168 项通过。覆盖 GATT / HID / Windows 电量字节的解析、未知和冲突、设备分类和 VID/PID 命名、多来源合并、最低电量、任务栏比例在四条边上的位置、自动隐藏和全屏时是否显示、设置默认关闭开机启动、身份覆盖文件，ATK 五套官方电量帧（BITMOUSE、COMPX、HECHI、HFD、EVISION）的命令、校验和 0–100 边界，以及西伯利亚耳机族的匹配、两条电量帧、超范围保持未知、不编充电状态、`10D6:4801` 按产品名区分。
 - `dotnet build src/PeripheralBattery.App/PeripheralBattery.App.csproj -c Release`：成功，0 个警告。WPF 工程、托盘图标、GATT / HID / 系统电量属性读取和任务栏跟随窗口都在这个工程里。
-- 这次没有重新打单文件安装包，也没有接上 ATK 键盘。EVISION 的帧是按 hub-v3 3.2.34 的官方脚本核对的，没有在真机 V75X 上读过电量。
+- 这次没有重新打单文件安装包，也没有接上西伯利亚耳机。帧是按 hub.xiberia.net 上 2026-11-28 的官方脚本核对的，没有在真机上读过电量。程序图标换成了用户给的绿色电池，托盘仍按最低电量自己画。
