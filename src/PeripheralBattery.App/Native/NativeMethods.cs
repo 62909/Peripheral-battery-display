@@ -53,6 +53,7 @@ internal static class NativeMethods
     public const int DigcfPresent = 0x00000002;
     public const int DigcfDeviceInterface = 0x00000010;
     public const int HidPInput = 0;
+    public const int HidPOutput = 1;
     public const int HidPFeature = 2;
     public const int HidPStatusSuccess = 0x00110000;
     public const int CrSuccess = 0;
